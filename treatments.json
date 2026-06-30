@@ -1,184 +1,66 @@
-// @ts-nocheck
-import { useState, useEffect, useRef } from "react"
-import { addPropertyControls, ControlType } from "framer"
-import { motion, AnimatePresence } from "framer-motion"
-
-interface Treatment {
-    name: string
-    duration: string
-    price: string
-    calSlug: string
-}
-
-interface Category {
-    id: string
-    label: string
-    icon: string
-    treatments: Treatment[]
-}
-
-const stepVariants = {
-    enter: (dir: number) => ({ x: dir > 0 ? 32 : -32, opacity: 0 }),
-    center: { x: 0, opacity: 1, transition: { duration: 0.35 } },
-    exit: (dir: number) => ({ x: dir > 0 ? -24 : 24, opacity: 0, transition: { duration: 0.2 } }),
-}
-
-const FALLBACK: Category[] = [
-    {
-        id: "loading",
-        label: "Katalógus betöltése...",
-        icon: "⏳",
-        treatments: [{ name: "Kérlek ellenőrizd a GitHub linkedet!", duration: "", price: "", calSlug: "" }]
-    }
+[
+  {
+    "id": "klassisch",
+    "label": "Klassisch",
+    "icon": "✦",
+    "treatments": [
+      { "name": "Klassische Gesichtsbehandlung", "duration": "90 Min", "price": "165 CHF", "calSlug": "klassische-gesichtsbehandlung" },
+      { "name": "Bellabaci Gesichtsmassage", "duration": "30 Min", "price": "60 CHF", "calSlug": "bellabaci-gesichtsmassage" }
+    ]
+  },
+  {
+    "id": "medizinisch",
+    "label": "Medizinisch",
+    "icon": "◈",
+    "treatments": [
+      { "name": "Microdermabrasion", "duration": "60 Min", "price": "165 CHF", "calSlug": "microdermabrasion" },
+      { "name": "Needling", "duration": "60 Min", "price": "180 CHF", "calSlug": "needling" },
+      { "name": "Green Peel Fresh Up", "duration": "60 Min", "price": "180 CHF", "calSlug": "green-peel-fresh-up" },
+      { "name": "Green Peel Energy", "duration": "60 Min", "price": "250 CHF", "calSlug": "green-peel-energy" },
+      { "name": "Green Peel Klassik", "duration": "60 Min", "price": "580 CHF", "calSlug": "green-peel-klassik" }
+    ]
+  },
+  {
+    "id": "qms",
+    "label": "QMS",
+    "icon": "◇",
+    "treatments": [
+      { "name": "QMS Medicosmetics CLASSIC", "duration": "90 Min", "price": "225 CHF", "calSlug": "qms-classic" },
+      { "name": "QMS Medicosmetics OXYGEN", "duration": "120 Min", "price": "285 CHF", "calSlug": "qms-oxygen" },
+      { "name": "QMS SK Alpha Revital Behandlung", "duration": "120 Min", "price": "255 CHF", "calSlug": "qms-sk-alpha-revital" }
+    ]
+  },
+  {
+    "id": "spezial",
+    "label": "Spezial",
+    "icon": "✧",
+    "treatments": [
+      { "name": "IPL Anti-Aging Behandlung", "duration": "60 Min", "price": "200 CHF", "calSlug": "ipl-anti-aging" },
+      { "name": "Radiofrequenzbehandlung", "duration": "60 Min", "price": "225 CHF", "calSlug": "radiofrequenzbehandlung" },
+      { "name": "IPL Achseln", "duration": "60 Min", "price": "160 CHF", "calSlug": "ipl-achseln" }
+    ]
+  },
+  {
+    "id": "haarentfernung",
+    "label": "Haarentfernung",
+    "icon": "⟡",
+    "treatments": [
+      { "name": "IPL Bikini", "duration": "60 Min", "price": "260 CHF", "calSlug": "ipl-bikini" },
+      { "name": "IPL Bikini & Intim", "duration": "60 Min", "price": "460 CHF", "calSlug": "ipl-bikini-intim" },
+      { "name": "IPL Oberlippe", "duration": "60 Min", "price": "80 CHF", "calSlug": "ipl-oberlippe" },
+      { "name": "IPL Kinn", "duration": "60 Min", "price": "160 CHF", "calSlug": "ipl-kinn" },
+      { "name": "IPL Nacken", "duration": "60 Min", "price": "130 CHF", "calSlug": "ipl-nacken" },
+      { "name": "IPL Unterschenkel", "duration": "60 Min", "price": "460 CHF", "calSlug": "ipl-unterschenkel" },
+      { "name": "IPL Oberschenkel", "duration": "60 Min", "price": "590 CHF", "calSlug": "ipl-oberschenkel" },
+      { "name": "IPL Ganze Beine", "duration": "60 Min", "price": "910 CHF", "calSlug": "ipl-ganze-beine" },
+      { "name": "IPL Schulter", "duration": "60 Min", "price": "390 CHF", "calSlug": "ipl-schulter" },
+      { "name": "IPL Ganzer Rücken", "duration": "60 Min", "price": "850 CHF", "calSlug": "ipl-ganzer-ruecken" },
+      { "name": "IPL Bauch", "duration": "60 Min", "price": "460 CHF", "calSlug": "ipl-bauch" },
+      { "name": "IPL Brust", "duration": "60 Min", "price": "390 CHF", "calSlug": "ipl-brust" },
+      { "name": "IPL Ganze Arme", "duration": "60 Min", "price": "590 CHF", "calSlug": "ipl-ganze-arme" },
+      { "name": "IPL Unterarme", "duration": "60 Min", "price": "330 CHF", "calSlug": "ipl-unterarme" },
+      { "name": "IPL Oberarme", "duration": "60 Min", "price": "330 CHF", "calSlug": "ipl-oberarme" },
+      { "name": "IPL Hände", "duration": "60 Min", "price": "120 CHF", "calSlug": "ipl-hande" }
+    ]
+  }
 ]
-
-export default function FinalBookingSystem(props) {
-    const {
-        githubJsonUrl = "",
-        bgColor = "#F7ECDF",
-        accentColor = "#A6807C",
-        textColor = "#3a3028",
-        mutedColor = "#7a7369",
-        successTitle = "Vielen Dank!",
-        successSubtitle = "Ihre Anfrage wurde erfolgreich übermittelt.",
-        successBody = "Sie erhalten in Kürze eine Bestätigungs-E-Mail.",
-        successButtonLabel = "Weitere Behandlung buchen",
-        logoText = "Gabriella's Beauty",
-    } = props
-
-    const [categories, setCategories] = useState<Category[]>([])
-    const [isLoading, setIsLoading] = useState(true)
-    const [step, setStep] = useState<"category" | "treatment" | "calendar" | "success">("category")
-    const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
-    const [selectedTreatment, setSelectedTreatment] = useState<Treatment | null>(null)
-    const [direction, setDirection] = useState(1)
-    
-    const iframeRef = useRef<HTMLIFrameElement>(null)
-
-    useEffect(() => {
-        if (!githubJsonUrl || githubJsonUrl.trim() === "") {
-            setCategories(FALLBACK)
-            setIsLoading(false)
-            return
-        }
-        setIsLoading(true)
-        fetch(githubJsonUrl)
-            .then(res => res.ok ? res.json() : Promise.reject())
-            .then(data => setCategories(Array.isArray(data) ? data : FALLBACK))
-            .catch(() => setCategories(FALLBACK))
-            .finally(() => setIsLoading(false))
-    }, [githubJsonUrl])
-
-    useEffect(() => {
-        const handleMsg = (e: MessageEvent) => {
-            const type = e.data?.type || e.data?.event || ""
-            if (["booking-successful", "bookingSuccessful", "cal:booking-successful", "__cal__booking_successful"].includes(type)) {
-                setDirection(1)
-                setStep("success")
-            }
-        }
-        window.addEventListener("message", handleMsg)
-        return () => window.removeEventListener("message", handleMsg)
-    }, [])
-
-    const goForward = (next: typeof step, cat?: Category, treat?: Treatment) => {
-        if (cat) setSelectedCategory(cat)
-        
-        if (treat) {
-            setSelectedTreatment(treat)
-            if (iframeRef.current) {
-                iframeRef.current.src = `https://cal.eu{treat.calSlug}?embed=true`
-            }
-        }
-        
-        setDirection(1)
-        setStep(next)
-    }
-
-    const goBack = (next: typeof step) => {
-        setDirection(-1)
-        setStep(next)
-    }
-
-    const reset = () => {
-        setDirection(-1)
-        setStep("category")
-        setSelectedCategory(null)
-        setSelectedTreatment(null)
-    }
-
-    return (
-        <div style={{ width: "100%", minHeight: "500px", backgroundColor: bgColor, color: textColor, fontFamily: "sans-serif", padding: "40px 20px", borderRadius: "16px", boxShadow: "0 4px 30px rgba(0,0,0,0.05)" }}>
-            {isLoading ? (
-                <div style={{ textAlign: "center", color: mutedColor, padding: "100px 0" }}>⏳ Katalog wird geladen...</div>
-            ) : (
-                <>
-                    <div style={{ textAlign: "center", marginBottom: "30px", fontWeight: "bold", fontSize: "24px", color: accentColor }}>{logoText}</div>
-                    
-                    <div style={{ display: step === "calendar" ? "block" : "none", width: "100%" }}>
-                        <button onClick={() => goBack("treatment")} style={{ background: "none", border: "none", color: mutedColor, cursor: "pointer", marginBottom: "15px", fontSize: "14px" }}>← Zurück</button>
-                        <div style={{ borderRadius: "12px", overflow: "hidden", height: "650px", background: "#ffffff" }}>
-                            <iframe 
-                                ref={iframeRef}
-                                src="about:blank"
-                                style={{ width: "100%", height: "100%", border: "none" }} 
-                            />
-                        </div>
-                    </div>
-
-                    <AnimatePresence mode="wait" custom={direction}>
-                        {step === "category" && (
-                            <motion.div key="cat" custom={direction} variants={stepVariants} initial="enter" animate="center" exit="exit" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                <p style={{ textAlign: "center", color: mutedColor }}>Wählen Sie eine Kategorie:</p>
-                                {categories.map(cat => (
-                                    <button key={cat.id} onClick={() => goForward("treatment", cat)} style={{ padding: "16px", borderRadius: "12px", border: `1px solid ${accentColor}40`, backgroundColor: "#ffffff", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px", color: textColor, width: "100%", textAlign: "left" }}>
-                                        <span style={{ fontSize: "20px" }}>{cat.icon}</span>
-                                        <strong>{cat.label}</strong>
-                                    </button>
-                                ))}
-                            </motion.div>
-                        )}
-
-                        {step === "treatment" && selectedCategory && (
-                            <motion.div key="treat" custom={direction} variants={stepVariants} initial="enter" animate="center" exit="exit" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                <button onClick={() => goBack("category")} style={{ alignSelf: "flex-start", background: "none", border: "none", color: mutedColor, cursor: "pointer" }}>← Zurück</button>
-                                <h3 style={{ color: accentColor, margin: "10px 0" }}>{selectedCategory.label}</h3>
-                                {selectedCategory.treatments.map((t, idx) => (
-                                    <button key={idx} onClick={() => goForward("calendar", null, t)} style={{ padding: "16px", borderRadius: "12px", border: "none", backgroundColor: "#ffffff", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                                        <div style={{ textAlign: "left" }}>
-                                            <div style={{ fontWeight: "bold", color: textColor }}>{t.name}</div>
-                                            <div style={{ fontSize: "13px", color: mutedColor }}>{t.duration}</div>
-                                        </div>
-                                        <div style={{ fontWeight: "bold", color: accentColor }}>{t.price}</div>
-                                    </button>
-                                ))}
-                            </motion.div>
-                        )}
-
-                        {step === "success" && (
-                            <motion.div key="succ" custom={direction} variants={stepVariants} initial="enter" animate="center" exit="exit" style={{ textAlign: "center", padding: "20px" }}>
-                                <h2 style={{ color: accentColor }}>{successTitle}</h2>
-                                <h4>{successSubtitle}</h4>
-                                <p style={{ color: mutedColor }}>{successBody}</p>
-                                <button onClick={reset} style={{ padding: "12px 24px", borderRadius: "30px", border: "none", backgroundColor: accentColor, color: "#ffffff", fontWeight: "bold", cursor: "pointer" }}>{successButtonLabel}</button>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </>
-            )}
-        </div>
-    )
-}
-
-addPropertyControls(FinalBookingSystem, {
-    githubJsonUrl: { type: ControlType.String, title: "🔗 GitHub Raw JSON URL", placeholder: "https://githubusercontent.com..." },
-    logoText: { type: ControlType.String, title: "Logo Szöveg", defaultValue: "Gabriella's Beauty" },
-    bgColor: { type: ControlType.Color, title: "Háttérszín", defaultValue: "#F7ECDF" },
-    accentColor: { type: ControlType.Color, title: "Akcentus szín", defaultValue: "#A6807C" },
-    textColor: { type: ControlType.Color, title: "Szövegszín", defaultValue: "#3a3028" },
-    mutedColor: { type: ControlType.Color, title: "Másodlagos szöveg", defaultValue: "#7a7369" },
-    successTitle: { type: ControlType.String, title: "Siker Cím", defaultValue: "Vielen Dank!" },
-    successSubtitle: { type: ControlType.String, title: "Siker Alcím", defaultValue: "Ihre Anfrage wurde erfolgreich übermittelt." },
-    successBody: { type: ControlType.String, title: "Sie erhalten in Kürze eine Bestätigungs-E-Mail.", displayTextArea: true },
-    successButtonLabel: { type: ControlType.String, title: "Siker Gomb", defaultValue: "Weitere Behandlung buchen" },
-})
