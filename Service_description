@@ -1,1050 +1,4003 @@
+
 // @ts-nocheck
-import { useState, useEffect } from "react"
+
+import * as React from "react"
+
+import { useState, useEffect, useMemo } from "react"
+
 import { addPropertyControls, ControlType } from "framer"
+
 import { motion, AnimatePresence } from "framer-motion"
 
-// ─── TÍPUSOK ─────────────────────────────────────────────────────────────────
-interface TreatmentSubItem {
-    name: string
-    duration?: string
-    price: string
-    description: string
-    calHref: string
-    imageUrl?: string
-}
 
-interface GeneralTreatment {
-    id: string
-    category: string
-    categoryLabel: string
-    title: string
-    leadText: string
-    items: TreatmentSubItem[]
-}
-
-interface BookingPageProps {
-    heroEyebrow?: string
-    heroTitle?: string
-    heroDesc?: string
-    heroScrollText?: string
-    heroBgColor?: string
-    listBgColor?: string
-    accentColor?: string
-    textColor?: string
-    mutedColor?: string
-    borderColor?: string
-    categoryFilter?: string
-    customCategories?: GeneralTreatment[]
-}
-
-// ─── CUSTOM HOOK A RESZPONSZÍV VISELKEDÉSHEZ ─────────────────────────────────
-function useMediaQuery(query: string) {
-    const [matches, setMatches] = useState(false)
-    useEffect(() => {
-        const media = window.matchMedia(query)
-        if (media.matches !== matches) setMatches(media.matches)
-        const listener = () => setMatches(media.matches)
-        media.addEventListener("change", listener)
-        return () => media.removeEventListener("change", listener)
-    }, [matches, query])
-    return matches
-}
-
-// ─── IKONOK ──────────────────────────────────────────────────────────────────
-function IconClock({ size = 14 }: { size?: number }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            style={{ opacity: 0.6 }}
-        >
-            <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="currentColor"
-                strokeWidth="1.5"
-            />
-            <path
-                d="M12 7v5l3 3"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    )
-}
-
-function IconTag({ size = 14 }: { size?: number }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            style={{ opacity: 0.6 }}
-        >
-            <path
-                d="M8.5 14.5L4 10V4H10L14.5 8.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M14.5 8.5L19 13C19.8284 13.8284 19.8284 15.1716 19 16L16 19C15.1716 19.8284 13.8284 19.8284 13 19L8.5 14.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <circle cx="7" cy="7" r="1" fill="currentColor" />
-        </svg>
-    )
-}
-
-function IconChevronDown({ size = 14 }: { size?: number }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-        >
-            <path
-                d="M6 9l6 6 6-6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    )
-}
-
-function IconChevronRight({ size = 12 }: { size?: number }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden="true"
-            style={{ marginLeft: 8, flexShrink: 0 }}
-        >
-            <path
-                d="M2 6h8M6.5 2.5L10 6l-3.5 3.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    )
-}
-
-function IconClose({ size = 20 }: { size?: number }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-        >
-            <path
-                d="M18 6L6 18M6 6l12 12"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </svg>
-    )
-}
 
 const SMOOTH_EASE = [0.16, 1, 0.3, 1]
 
-// ─── CURATED PRÉMIUM KÉP ADATBÁZIS (TÉMÁBA VÁGÓ UNSPLASH FOTÓK) ───────────────
-const IMG_CLASSIC_FACIAL = "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=600&q=80"
-const IMG_RELAX_MASSAGE = "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80"
-const IMG_MICRODERM = "https://images.unsplash.com/photo-1512290900672-1f04d1508201?auto=format&fit=crop&w=600&q=80"
-const IMG_NEEDLING = "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=600&q=80"
-const IMG_GREEN_PEEL = "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80"
-const IMG_QMS_LUXURY = "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=600&q=80"
-const IMG_RADIOFREQ = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80"
-const IMG_IPL_SMOOTH = "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=600&q=80"
 
-// ─── BEÉGETETT ADATBÁZIS (ALAPÉRTELMEZETT FALLBACK KÉPEKKEL) ──────────────────
-const CATEGORIZED_TREATMENTS: GeneralTreatment[] = [
-    {
-        id: "klassische-kosmetik",
-        category: "klassisch",
-        categoryLabel: "Klassische Kosmetik",
-        title: "Klassische Gesichtsbehandlungen",
-        leadText:
-            "Traditionelle Gesichtspflege und entspannende Massagen für ein revitalisiertes, strahlendes Hautbild.",
-        items: [
-            {
-                name: "Klassische Gesichtsbehandlung",
-                duration: "90 Min",
-                price: "165 CHF",
-                description:
-                    "Ein Einzeltermin zur umfassenden Gesichtsbehandlung, abgestimmt auf Ihren Hauttyp.",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/klassische-gesichtsbehandlung",
-                imageUrl: IMG_CLASSIC_FACIAL,
-            },
-            {
-                name: "Bellabaci Gesichtsmassage",
-                duration: "30 Min",
-                price: "ab 60 CHF",
-                description:
-                    "Exklusive Gesichtsmassage zur Tiefenentspannung. Nur während einer Gesichtsbehandlung buchbar.",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/bellabaci-gesichtsmassage",
-                imageUrl: IMG_RELAX_MASSAGE,
-            },
-        ],
-    },
-    {
-        id: "medizinische-kosmetik",
-        category: "medizinisch",
-        categoryLabel: "Medizinische Kosmetik",
-        title: "Apparative & Medizinische Kosmetik",
-        leadText:
-            "Fortschrittliche dermatologische Treatments für tiefenwirksame Regeneration und sichtbare Hauterneuerung.",
-        items: [
-            {
-                name: "Gesichtsbehandlung mit Microdermabrasion (Einzel)",
-                price: "165 CHF",
-                description:
-                    "Sanftes mechanisches Peeling zur Verfeinerung des Hautbildes.",
-                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
-                imageUrl: IMG_MICRODERM,
-            },
-            {
-                name: "Gesichtsbehandlung mit Needling (Einzel)",
-                price: "180 CHF",
-                description:
-                    "Minimal-invasives Treatment zur Kollagenstimulation.",
-                calHref: "https://cal.eu/gabriellasbeauty/needling",
-                imageUrl: IMG_NEEDLING,
-            },
-        ],
-    },
-    {
-        id: "green-peel",
-        category: "medizinisch",
-        categoryLabel: "Medizinische Kosmetik",
-        title: "Green Peel Kräuterschälkur",
-        leadText:
-            "Die originale, weltbekannte Methode zur natürlichen Hauterneuerung auf rein pflanzlicher Basis.",
-        items: [
-            {
-                name: "Green Peel Fresh Up",
-                price: "180 CHF",
-                description:
-                    "Der Frischekick ohne Schälung. Ideal für Pigmentstörungen und müde Haut.",
-                calHref: "https://cal.eu/gabriellasbeauty/green-peel-fresh-up",
-                imageUrl: IMG_GREEN_PEEL,
-            },
-            {
-                name: "Green Peel Energy",
-                price: "250 CHF",
-                description:
-                    "Intensiver Vitalitätsschub für reifere, anspruchsvolle Hautbilder.",
-                calHref: "https://cal.eu/gabriellasbeauty/green-peel-energy",
-                imageUrl: IMG_GREEN_PEEL,
-            },
-        ],
-    },
-    {
-        id: "qms-medicosmetics",
-        category: "qms",
-        categoryLabel: "QMS Medicosmetics",
-        title: "QMS Systempflege treatments",
-        leadText:
-            "Exklusive zelluläre Verjüngungstechnologie mit medizinischem Collagen. Neu und einmalig in Luzern!",
-        items: [
-            {
-                name: "QMS CLASSIC",
-                duration: "90 Min",
-                price: "225 CHF",
-                description:
-                    "Hautidentische Kollagene für sofort sichtbare Straffung und intensive Hydratation.",
-                calHref: "https://cal.eu/gabriellasbeauty/qms-classic",
-                imageUrl: IMG_QMS_LUXURY,
-            },
-            {
-                name: "QMS OXYGEN",
-                duration: "120 Min",
-                price: "285 CHF",
-                description:
-                    "Hochkonzentrierte Sauerstoff-Behandlung für ultimative Zellregeneration.",
-                calHref: "https://cal.eu/gabriellasbeauty/qms-oxygen",
-                imageUrl: IMG_QMS_LUXURY,
-            },
-        ],
-    },
-    {
-        id: "apparative-spezial",
-        category: "apparative",
-        categoryLabel: "Spezialbehandlungen",
-        title: "Apparative Ästhetik & Anti-Aging",
-        leadText:
-            "Sichtbares Lifting und Gewebestraffung mit modernster Medizintechnik – ganz ohne Skalpell.",
-        items: [
-            {
-                name: "Radiofrequenzbehandlung (Einzel)",
-                price: "225 CHF",
-                description:
-                    "Tiefenwirksame Radiofrequenzströme zur sofortigen Straffung des Bindegewebes.",
-                calHref: "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
-                imageUrl: IMG_RADIOFREQ,
-            },
-        ],
-    },
-    {
-        id: "ipl-behandlungen",
-        category: "ipl",
-        categoryLabel: "IPL Behandlungen",
-        title: "IPL Dauerhafte Haarentfernung",
-        leadText:
-            "Sichere und effektive IPL-Technologie für langanhaltend glatte Haut und ein verjüngtes, ebenmäßiges Hautbild.",
-        items: [
-            {
-                name: "IPL Achseln",
-                price: "ab 160 CHF",
-                description: "Dauerhaft glatte Achseln durch moderne IPL-Technik.",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-achseln",
-                imageUrl: IMG_IPL_SMOOTH,
-            },
-            {
-                name: "IPL Ganze Beine",
-                price: "ab 910 CHF",
-                description: "Das komplette Wohlfühlpaket für Ihre Beine.",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-beine",
-                imageUrl: IMG_IPL_SMOOTH,
-            },
-        ],
-    },
-]
 
-// ─── BOOKING MODAL ───────────────────────────────────────────────────────────
-function BookingModal({
-    treatment,
-    onClose,
-    accentColor,
-    bgColor,
-    textColor,
-    mutedColor,
-}: any) {
-    const isOpen = !!treatment
-    const isMobile = useMediaQuery("(max-width: 768px)")
+// ─── KIEMELÉSHEZ HASZNÁLHATÓ IKONOK ──────────────────────────────────────────
+
+const HIGHLIGHT_ICONS: Record<string, JSX.Element> = {
+
+    star: (
+
+        <svg
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <polygon
+
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    ),
+
+    sparkles: (
+
+        <svg
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <path
+
+                d="M12 2l 2 6 6 2-6 2-2 6-2-6-6-2 6-2z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    ),
+
+    tag: (
+
+        <svg
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <path
+
+                d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <circle cx="7" cy="7" r="1" fill="currentColor" />
+
+        </svg>
+
+    ),
+
+    gift: (
+
+        <svg
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <polyline
+
+                points="20 12 20 22 4 22 4 12"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <rect
+
+                x="2"
+
+                y="7"
+
+                width="20"
+
+                height="5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <line
+
+                x1="12"
+
+                y1="22"
+
+                x2="12"
+
+                y2="7"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path
+
+                d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path
+
+                d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    ),
+
+    award: (
+
+        <svg
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <circle
+
+                cx="12"
+
+                cy="8"
+
+                r="6"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path
+
+                d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    ),
+
+}
+
+
+
+// ─── KIS IKONOK A CÍMKÉKHEZ (TAGS) ───
+
+function IconSmallCheck() {
+
+    return (
+
+        <svg
+
+            width="12"
+
+            height="12"
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="2.5"
+
+            style={{ flexShrink: 0 }}
+
+        >
+
+            <path
+
+                d="M20 6L9 17l-5-5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconSmallStar() {
+
+    return (
+
+        <svg
+
+            width="12"
+
+            height="12"
+
+            viewBox="0 0 24 24"
+
+            fill="currentColor"
+
+            style={{ flexShrink: 0 }}
+
+        >
+
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+
+        </svg>
+
+    )
+
+}
+
+
+
+interface PremiumTreatmentCardProps {
+
+    stepNumber?: string
+
+    savingLabel?: string
+
+    teaserText?: string
+
+    highlightIcon?: string
+
+    title?: string
+
+    description?: React.ReactNode
+
+    price?: string
+
+    priceAbo1?: string
+
+    priceAbo2?: string
+
+    priceAbo3?: string
+
+    duration?: string
+
+    image?: string
+
+    calHref?: string
+
+    bgColor?: string
+
+    accentColor?: string
+
+    textColor?: string
+
+    mutedColor?: string
+
+}
+
+
+
+export default function PremiumTreatmentCard({
+
+    stepNumber = "01",
+
+    savingLabel = "",
+
+    teaserText = "",
+
+    highlightIcon = "gift",
+
+    title = "Microdermabrasion",
+
+    description = "Zuallererst werden abgestorbene Hautzellen mit Hilfe der Mikrodermabrasion entfernt, bis die gesunde Haut zum Vorschein kommt.",
+
+    price = "165 CHF",
+
+    priceAbo1 = "3er Abo 450 CHF",
+
+    priceAbo2 = "5er Abo 700 CHF",
+
+    priceAbo3 = "10er Abo 1300 CHF",
+
+    duration = "90 Min",
+
+    image = "https://framerusercontent.com/images/oYVb9w6e6MrqNh41nR5E1E7Ck0.png",
+
+    calHref = "https://cal.eu/gabriellasbeauty/klassische-gesichtsbehandlung",
+
+    bgColor = "#F7ECDF",
+
+    accentColor = "#A6807C",
+
+    textColor = "#3A3028",
+
+    mutedColor = "#7A7369",
+
+}: PremiumTreatmentCardProps) {
+
+    const [isOpen, setIsOpen] = useState(false)
+
+    const [isSuccess, setIsSuccess] = useState(false)
+
+    const isMobile = useMemo(
+
+        () => (typeof window !== "undefined" ? window.innerWidth < 768 : true),
+
+        []
+
+    )
+
+
 
     useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = "hidden"
-        } else {
-            document.body.style.overflow = ""
+
+        if (!isOpen) {
+
+            setIsSuccess(false)
+
+            return
+
         }
-        return () => {
-            document.body.style.overflow = ""
+
+        const handleMessage = (e: MessageEvent) => {
+
+            const data = e.data
+
+            if (!data) return
+
+            const type = data?.type || data?.event || ""
+
+            if (
+
+                type === "booking-successful" ||
+
+                type === "bookingSuccessful" ||
+
+                type === "cal:booking-successful" ||
+
+                type === "__cal__booking_successful"
+
+            ) {
+
+                setIsSuccess(true)
+
+            }
+
         }
+
+        window.addEventListener("message", handleMessage)
+
+        return () => window.removeEventListener("message", handleMessage)
+
     }, [isOpen])
 
-    let iframeSrc = ""
-    if (treatment?.calHref) {
-        const baseUrl = treatment.calHref
-        const separator = baseUrl.includes("?") ? "&" : "?"
-        iframeSrc = `${baseUrl}${separator}embed=true&theme=light&layout=month_view&hideEventTypeDetails=1`
-    }
+
+
+    const iframeSrc = calHref
+
+        ? `${calHref}?embed=true&theme=light&layout=month_view&hideEventTypeDetails=1`
+
+        : ""
+
+
+
+    const hasHighlight = savingLabel.trim() !== "" || teaserText.trim() !== ""
+
+
 
     return (
-        <AnimatePresence>
-            {isOpen && (
-                <motion.div
-                    className="cp-modal-overlay"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3, ease: SMOOTH_EASE }}
-                    onClick={onClose}
-                >
-                    <motion.div
-                        className="cp-modal-content"
-                        onClick={(e) => e.stopPropagation()}
-                        initial={
-                            isMobile
-                                ? { y: "100%" }
-                                : { opacity: 0, scale: 0.95, y: 0 }
-                        }
-                        animate={
-                            isMobile ? { y: 0 } : { opacity: 1, scale: 1, y: 0 }
-                        }
-                        exit={
-                            isMobile
-                                ? { y: "100%" }
-                                : { opacity: 0, scale: 0.95, y: 0 }
-                        }
-                        transition={{
-                            type: "spring",
-                            damping: 28,
-                            stiffness: 220,
-                        }}
-                        drag={isMobile ? "y" : false}
-                        dragConstraints={{ top: 0, bottom: 0 }}
-                        dragElastic={{ top: 0.05, bottom: 0.7 }}
-                        onDragEnd={(_e, info) => {
-                            if (
-                                isMobile &&
-                                (info.velocity.y > 400 || info.offset.y > 120)
-                            )
-                                onClose()
-                        }}
-                        style={{ background: bgColor }}
-                        role="dialog"
-                        aria-modal="true"
-                    >
-                        <div
-                            className="cp-modal-header"
-                            style={{ background: bgColor }}
-                        >
-                            {isMobile && (
-                                <div className="cp-modal-drag-handle">
-                                    <div
-                                        style={{
-                                            width: 44,
-                                            height: 5,
-                                            background: mutedColor,
-                                            opacity: 0.3,
-                                            borderRadius: 99,
-                                        }}
-                                    />
-                                </div>
-                            )}
 
-                            {!isMobile && (
-                                <button
-                                    className="cp-modal-close-btn"
-                                    onClick={onClose}
-                                    aria-label="Schließen"
-                                    style={{ color: mutedColor }}
-                                >
-                                    <IconClose />
-                                </button>
-                            )}
-
-                            <div
-                                className="cp-modal-header-info"
-                                style={{
-                                    borderBottom: `1px solid ${mutedColor}20`,
-                                }}
-                            >
-                                <h2
-                                    style={{
-                                        fontFamily: "'Montserrat', sans-serif",
-                                        fontSize: 18,
-                                        color: textColor,
-                                        margin: "0 0 6px 0",
-                                        fontWeight: 500,
-                                        paddingRight: 32,
-                                    }}
-                                >
-                                    {treatment.name}
-                                </h2>
-                                <p
-                                    style={{
-                                        fontFamily: "'Inter', sans-serif",
-                                        fontSize: 13,
-                                        color: mutedColor,
-                                        margin: 0,
-                                        lineHeight: 1.5,
-                                        whiteSpace: "pre-line",
-                                    }}
-                                >
-                                    {treatment.description} <br />
-                                    <br />
-                                    <strong
-                                        style={{
-                                            color: accentColor,
-                                            fontWeight: 600,
-                                        }}
-                                    >
-                                        {treatment.price}
-                                    </strong>
-                                    {treatment.duration &&
-                                        ` • ${treatment.duration}`}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="cp-modal-iframe-wrap">
-                            {iframeSrc ? (
-                                <iframe
-                                    src={iframeSrc}
-                                    style={{
-                                        width: "100%",
-                                        height: "100%",
-                                        border: "none",
-                                        display: "block",
-                                    }}
-                                    title={`Termin buchen: ${treatment.name}`}
-                                    loading="lazy"
-                                />
-                            ) : (
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        height: "100%",
-                                        color: mutedColor,
-                                        fontFamily: "'Inter', sans-serif",
-                                        fontSize: 14,
-                                    }}
-                                >
-                                    Buchungslink nicht verfügbar.
-                                </div>
-                            )}
-                        </div>
-                    </motion.div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-    )
-}
-
-// ─── ACCORDION KÁRTYA (KEZELÉS SOR) ──────────────────────────────────────────
-function TreatmentRow({
-    treatment,
-    index,
-    onBook,
-    accentColor,
-    bgColor,
-    textColor,
-    mutedColor,
-    borderColor,
-}: any) {
-    const [open, setOpen] = useState(false)
-
-    const resolveImageUrl = (img: any) => {
-        if (!img) return null
-        if (typeof img === "string") return img
-        if (typeof img === "object" && img.src) return img.src
-        if (typeof img === "object" && img.url) return img.url
-        return null
-    }
-
-    const finalImage = resolveImageUrl(treatment.imageUrl)
-
-    return (
-        <div
-            className={`cp-row-wrapper ${open ? "is-open" : ""}`}
-            style={{ borderColor: open ? accentColor : borderColor }}
-        >
-            <button
-                type="button"
-                className="cp-row-header"
-                onClick={() => setOpen((v) => !v)}
-                aria-expanded={open}
-            >
-                <div className="cp-row-left">
-                    <span className="cp-row-num" style={{ color: accentColor }}>
-                        {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="cp-row-title" style={{ color: textColor }}>
-                        {treatment.name}
-                    </span>
-                </div>
-                <div className="cp-row-right">
-                    {treatment.duration && (
-                        <div
-                            className="cp-row-meta"
-                            style={{ color: mutedColor }}
-                        >
-                            <IconClock /> <span>{treatment.duration}</span>
-                        </div>
-                    )}
-                    <div
-                        className="cp-row-meta cp-row-price"
-                        style={{ color: textColor }}
-                    >
-                        <IconTag /> <span>{treatment.price}</span>
-                    </div>
-                    <div
-                        className="cp-row-trigger"
-                        style={{ color: open ? accentColor : mutedColor }}
-                    >
-                        <span className="cp-row-toggle-text">
-                            {open ? "Details ausblenden" : "Details anzeigen"}
-                        </span>
-                        <div
-                            className="cp-row-toggle-icon"
-                            style={{
-                                borderColor: open ? accentColor : borderColor,
-                                color: open ? accentColor : mutedColor,
-                                transform: open
-                                    ? "rotate(180deg)"
-                                    : "rotate(0deg)",
-                            }}
-                        >
-                            <IconChevronDown />
-                        </div>
-                    </div>
-                </div>
-            </button>
-
-            <AnimatePresence initial={false}>
-                {open && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.4, ease: SMOOTH_EASE }}
-                        style={{ overflow: "hidden" }}
-                    >
-                        <div
-                            className="cp-row-body"
-                            style={{ borderTop: `1px dashed ${borderColor}` }}
-                        >
-                            <div className="cp-row-body-inner">
-                                <div className="cp-row-content">
-                                    <p
-                                        className="cp-row-desc"
-                                        style={{ color: mutedColor }}
-                                    >
-                                        {treatment.description}
-                                    </p>
-                                    <div className="cp-row-action">
-                                        <motion.button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                onBook(treatment)
-                                            }}
-                                            whileHover={{
-                                                y: -2,
-                                                boxShadow:
-                                                    "0 8px 24px rgba(166, 128, 124, 0.25)",
-                                                filter: "brightness(1.05)",
-                                            }}
-                                            whileTap={{ scale: 0.98 }}
-                                            transition={{
-                                                duration: 0.3,
-                                                ease: SMOOTH_EASE,
-                                            }}
-                                            style={{
-                                                display: "inline-flex",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                                padding: "14px 32px",
-                                                color: "#FFFFFF",
-                                                fontFamily:
-                                                    "'Montserrat', sans-serif",
-                                                fontSize: "11px",
-                                                fontWeight: 500,
-                                                letterSpacing: "0.16em",
-                                                textTransform: "uppercase",
-                                                borderRadius: "4px",
-                                                backgroundColor: accentColor,
-                                                boxShadow:
-                                                    "0 4px 16px rgba(166, 128, 124, 0.12)",
-                                                cursor: "pointer",
-                                                border: "none",
-                                                outline: "none",
-                                                width: "100%",
-                                                maxWidth: "max-content",
-                                                marginTop: "16px",
-                                            }}
-                                        >
-                                            Jetzt buchen
-                                            <IconChevronRight size={12} />
-                                        </motion.button>
-                                    </div>
-                                </div>
-                                {finalImage && (
-                                    <motion.div
-                                        className="cp-row-image-wrapper"
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        transition={{
-                                            duration: 0.5,
-                                            delay: 0.1,
-                                            ease: SMOOTH_EASE,
-                                        }}
-                                    >
-                                        <img
-                                            src={finalImage}
-                                            alt={treatment.name}
-                                            className="cp-row-image"
-                                            loading="lazy"
-                                        />
-                                    </motion.div>
-                                )}
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
-    )
-}
-
-// ─── FŐ KOMPONENS ────────────────────────────────────────────────────────────
-export default function BookingPageUnified({
-    heroEyebrow = "ONLINE TERMINBUCHUNG",
-    heroTitle = "Wählen Sie Ihre Behandlung",
-    heroDesc = "Buchen Sie Ihren Wunschtermin unkompliziert online. Wählen Sie untenstehend Ihre Behandlung aus, um freie Termine zu sehen.",
-    heroScrollText = "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
-    heroBgColor = "#F7ECDF",
-    listBgColor = "#FFFFFF",
-    accentColor = "#A6807C",
-    textColor = "#3A3028",
-    mutedColor = "#7A7369",
-    borderColor = "#EFEBE6",
-    categoryFilter = "alle",
-    customCategories = CATEGORIZED_TREATMENTS,
-}: BookingPageProps) {
-    const [selectedTreatment, setSelectedTreatment] =
-        useState<TreatmentSubItem | null>(null)
-
-    // ─── BOLONDBIZTOS VÉDELMI ELLENŐRZÉS ───
-    // Megvizsgáljuk, hogy a Framer jobb oldali paneljéről érkező adat tartalmaz-e valós kezeléseket
-    const hasValidCustomData =
-        customCategories &&
-        Array.isArray(customCategories) &&
-        customCategories.length > 0 &&
-        customCategories.some(
-            (cat) => cat.items && Array.isArray(cat.items) && cat.items.length > 0
-        )
-
-    // Ha a Framer Canvas üres vagy sérült felülírást (0 Angebote) küldene, azonnal a gyári listát töltjük be!
-    const activeData = hasValidCustomData
-        ? customCategories
-        : CATEGORIZED_TREATMENTS
-
-    const isFiltered = categoryFilter && categoryFilter !== "alle"
-    const visibleCategories = isFiltered
-        ? activeData.filter((cat) => cat.category === categoryFilter)
-        : activeData
-
-    const totalTreatments = visibleCategories.reduce(
-        (total, cat) => total + (cat.items?.length || 0),
-        0
-    )
-
-    return (
         <>
+
             <style>{`
-                /* ALAP BEÁLLÍTÁSOK */
-                .cp-unified-wrap { width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
 
-                /* ─── HERO SZEKCIÓ ─── */
-                .cp-hero { width: 100%; background-color: ${heroBgColor}; padding: 100px 24px 80px; display: flex; justify-content: center; text-align: center; }
-                .cp-hero-inner { max-width: 700px; display: flex; flex-direction: column; align-items: center; }
-                .cp-hero-eyebrow { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; color: ${accentColor}; text-transform: uppercase; margin-bottom: 24px; }
-                .cp-hero-title { font-family: 'Montserrat', sans-serif; font-size: clamp(32px, 5vw, 44px); font-weight: 300; color: ${textColor}; line-height: 1.2; margin: 0 0 24px 0; letter-spacing: -0.02em; }
-                .cp-hero-desc { font-size: 16px; line-height: 1.7; color: ${mutedColor}; margin: 0 0 48px 0; max-width: 560px; }
-                .cp-hero-scroll { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 0.15em; color: ${mutedColor}; text-transform: uppercase; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: color 0.3s ease; }
-                .cp-hero-scroll:hover { color: ${accentColor}; }
-                .cp-hero-scroll-underline { border-bottom: 1px solid ${accentColor}; padding-bottom: 2px; }
+                .ptc-box {
 
-                /* ─── LISTA SZEKCIÓ ─── */
-                .cp-list-section { width: 100%; background-color: ${listBgColor}; padding: 64px 24px 100px; display: flex; justify-content: center; }
-                .cp-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; }
+                    width: 100%; height: 100%; display: flex; flex-direction: column; gap: 16px; background: transparent;
 
-                /* ─── LISTA FEJLÉC ─── */
-                .cp-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; padding-bottom: 16px; border-bottom: 1px solid ${borderColor}; }
-                .cp-list-title { font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; color: ${mutedColor}; text-transform: uppercase; margin: 0; }
-                .cp-list-badge { font-size: 11px; font-weight: 500; color: ${mutedColor}; border: 1px solid ${borderColor}; padding: 6px 14px; border-radius: 20px; }
+                    font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; box-sizing: border-box;
 
-                /* ─── KATEGÓRIÁK ─── */
-                .cp-category-group { margin-bottom: 56px; }
-                .cp-category-header { margin-bottom: 24px; padding-left: 8px; }
-                .cp-category-title { font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 400; color: ${textColor}; margin: 0 0 8px 0; letter-spacing: -0.01em; }
-                .cp-category-lead { font-family: 'Inter', sans-serif; font-size: 14px; color: ${mutedColor}; margin: 0; max-width: 600px; line-height: 1.6; }
+                    padding-bottom: 24px; border-bottom: 1px solid ${accentColor}15; position: relative;
 
-                /* ─── KÁRTYÁK STÍLUSA ─── */
-                .cp-rows { display: flex; flex-direction: column; gap: 16px; }
-                .cp-row-wrapper { background: #ffffff; border-radius: 12px; border: 1px solid; overflow: hidden; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-                .cp-row-wrapper:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.04); transform: translateY(-1px); }
-                .cp-row-wrapper.is-open { box-shadow: 0 8px 32px rgba(166, 128, 124, 0.08); }
+                }
 
-                .cp-row-header { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; background: transparent; border: none; outline: none; cursor: pointer; text-align: left; border-radius: 12px; }
-                .cp-row-header:focus-visible { outline: 2px solid ${accentColor}; outline-offset: -2px; }
-
-                .cp-row-left { display: flex; align-items: flex-start; gap: 24px; flex: 1; }
-                .cp-row-num { font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 600; margin-top: 2px; opacity: 0.8; }
-                .cp-row-title { font-size: 16px; font-weight: 400; line-height: 1.4; max-width: 320px; }
-                .cp-row-right { display: flex; align-items: center; gap: 32px; flex-shrink: 0; }
-                .cp-row-meta { display: flex; align-items: center; font-size: 13px; font-weight: 400; white-space: nowrap; gap: 6px; }
-                .cp-row-price { font-weight: 500; font-family: 'Inter', sans-serif; }
                 
-                .cp-row-trigger { display: flex; align-items: center; gap: 12px; transition: color 0.3s ease; }
-                .cp-row-toggle-text { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
-                .cp-row-toggle-icon { width: 32px; height: 32px; border-radius: 50%; border: 1px solid; display: flex; align-items: center; justify-content: center; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-                .cp-row-header:hover .cp-row-toggle-icon { border-color: ${accentColor} !important; color: ${accentColor} !important; }
 
-                .cp-row-body { background: linear-gradient(to bottom, rgba(247, 236, 223, 0.15), transparent); }
-                .cp-row-body-inner { padding: 24px 32px 32px 70px; display: flex; align-items: stretch; gap: 32px; }
-                .cp-row-content { flex: 1; display: flex; flex-direction: column; }
+                /* KÉPMÉRET JAVÍTÁSA: max-height és 16/9 arány */
+
+                .ptc-media { 
+
+                    width: 100%; aspect-ratio: 16 / 9; max-height: 240px; position: relative; 
+
+                    overflow: hidden; border-radius: 4px; background: ${accentColor}08; flex-shrink: 0;
+
+                }
+
+                .ptc-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+
+                .ptc-box:hover .ptc-img { transform: scale(1.04); }
+
                 
-                .cp-row-image-wrapper { width: 220px; flex-shrink: 0; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; border: 1px solid ${borderColor}; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-                .cp-row-image { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
-                .cp-row-wrapper.is-open:hover .cp-row-image { transform: scale(1.03); }
 
-                .cp-row-desc { font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; max-width: 600px; white-space: pre-line; }
-                .cp-row-action { margin-top: auto; } 
+                /* FŐ KONTÉNER: A kártya rugalmasan nő */
 
-                /* ─── ALSÓ DÍSZÍTŐ ELVÁLASZTÓ ─── */
-                .cp-bottom-divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 64px; opacity: 0.5; }
-                .cp-divider-line { height: 1px; width: 120px; background: ${borderColor}; }
-                .cp-divider-diamond { width: 6px; height: 6px; background: ${accentColor}; transform: rotate(45deg); }
+                .ptc-details { 
 
-                /* ─── RESZPONSZÍV POPUP / BOTTOM SHEET ─── */
-                .cp-modal-overlay {
-                    position: fixed; inset: 0; background: rgba(28,20,15,0.45); z-index: 9998;
-                    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-                    display: flex; justify-content: center; align-items: center;
+                    padding: 4px 0 0 0; display: flex; flex-direction: column; flex: 1; gap: 20px; 
+
                 }
-                .cp-modal-content {
-                    width: 100%; max-width: 720px; height: 85vh; max-height: 800px;
-                    border-radius: 24px; display: flex; flex-direction: column; overflow: hidden;
-                    box-shadow: 0 24px 64px rgba(0,0,0,0.2); position: relative;
-                }
-                .cp-modal-header { flex-shrink: 0; z-index: 2; position: relative; }
-                .cp-modal-drag-handle { display: none; } 
-                .cp-modal-close-btn {
-                    position: absolute; top: 16px; right: 16px; width: 40px; height: 40px;
-                    display: flex; align-items: center; justify-content: center;
-                    background: transparent; border: none; cursor: pointer; border-radius: 50%;
-                    transition: background 0.2s ease;
-                }
-                .cp-modal-close-btn:hover { background: rgba(0,0,0,0.05); }
-                .cp-modal-header-info { padding: 24px 24px 16px; }
-                .cp-modal-iframe-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; background: #ffffff; }
 
-                /* ─── MOBIL NÉZET ─── */
-                @media (max-width: 768px) {
-                    .cp-hero { padding: 80px 20px 60px; }
-                    .cp-list-section { padding: 40px 20px 80px; }
-                    .cp-category-header { padding-left: 0; }
-                    .cp-category-title { font-size: 20px; }
-                    
-                    .cp-row-header { flex-direction: column; align-items: flex-start; padding: 20px; gap: 20px; }
-                    .cp-row-right { width: 100%; justify-content: flex-start; padding-left: 42px; gap: 16px; flex-wrap: wrap; }
-                    .cp-row-toggle-text { display: none; }
-                    .cp-row-trigger { margin-left: auto; }
-                    
-                    .cp-row-body-inner { padding: 20px 20px 24px 20px; flex-direction: column-reverse; gap: 24px; }
-                    .cp-row-image-wrapper { width: 100%; aspect-ratio: 16 / 9; }
+                
 
-                    .cp-modal-overlay { align-items: flex-end; }
-                    .cp-modal-content {
-                        height: 90dvh; max-height: none; max-width: 100%;
-                        border-radius: 24px 24px 0 0;
-                    }
-                    .cp-modal-drag-handle { display: flex; justify-content: center; padding: 16px 0; cursor: grab; }
-                    .cp-modal-header-info { padding: 0 24px 16px; }
+                /* SOHASEM VÁLIK SZÉT A CÍM ÉS A LEÍRÁS */
+
+                .ptc-content-group {
+
+                    display: flex; flex-direction: column; justify-content: flex-start; gap: 12px;
+
                 }
+
+
+
+                /* A GOMB ÉS A CÍMKÉK MINDIG AZ ALJÁN MARADNAK */
+
+                .ptc-action-group {
+
+                    display: flex; flex-direction: column; gap: 12px; margin-top: auto; align-items: flex-start;
+
+                }
+
+                
+
+                /* ── KIEMELT DOBÓZ ── */
+
+                .ptc-highlight-box {
+
+                    display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px;
+
+                    background: #FFFFFF; border-radius: 4px; border-left: 3px solid ${accentColor};
+
+                    box-shadow: 0 4px 14px rgba(0,0,0,0.04); margin-bottom: 4px;
+
+                }
+
+                .ptc-highlight-icon { width: 20px; height: 20px; color: ${accentColor}; flex-shrink: 0; margin-top: 2px; }
+
+                .ptc-highlight-text { display: flex; flex-direction: column; gap: 2px; }
+
+                .ptc-saving-label { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: ${accentColor}; line-height: 1.3; }
+
+                .ptc-teaser-text { font-size: 13.5px; font-weight: 500; color: ${textColor}; line-height: 1.4; }
+
+
+
+                /* META & ÁR */
+
+                .ptc-meta-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: -4px; }
+
+                .ptc-tag { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; color: ${mutedColor}; padding: 4px 0; display: flex; align-items: center; gap: 6px; }
+
+                .ptc-tag--price { color: #FFFFFF; background: ${accentColor}; padding: 5px 12px; border-radius: 2px; letter-spacing: 0.04em; }
+
+                
+
+                /* CÍM ÉS LEÍRÁS */
+
+                .ptc-title { font-family: 'Montserrat', sans-serif; font-size: 20px; font-weight: 500; color: ${textColor}; margin: 0; letter-spacing: -0.01em; transition: color 0.3s; }
+
+                .ptc-box:hover .ptc-title { color: ${accentColor}; }
+
+                .ptc-desc-wrap { font-size: 14px; line-height: 1.65; color: ${mutedColor}; max-width: 95%; margin: 0; }
+
+                .ptc-desc-wrap > *:first-child { margin-top: 0; }
+
+                .ptc-desc-wrap > *:last-child { margin-bottom: 0; }
+
+                .ptc-desc-wrap p { margin: 0 0 12px 0; }
+
+                .ptc-desc-wrap strong { color: ${textColor}; font-weight: 600; }
+
+                
+
+                /* ── BÉRLET (ABO) CÍMKÉK ── */
+
+                .ptc-abo-wrapper { display: flex; flex-direction: row; gap: 10px; width: 100%; flex-wrap: wrap; }
+
+                .ptc-abo-tag {
+
+                    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
+
+                    border-radius: 2px; border: 1px solid ${accentColor}40; background: transparent; color: ${mutedColor};
+
+                    font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+
+                    transition: all 0.3s ease;
+
+                }
+
+                .ptc-abo-tag--solid { background: ${accentColor}; border-color: ${accentColor}; color: #FFFFFF; font-weight: 600; }
+
+
+
+                /* CTA GOMB (Design System frissítés) */
+
+                .cp-btn {
+
+                    display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; color: #FFFFFF;
+
+                    font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+
+                    text-transform: uppercase; border: none; 
+
+                    border-radius: 4px; /* Brand Guidelines */
+
+                    cursor: pointer; width: max-content;
+
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.12); /* Brand Guidelines */
+
+                    transition: background 0.3s, transform 0.2s;
+
+                }
+
+                .cp-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+
+
+
+                /* MOBIL NÉZET */
+
+                @media (max-width: 768px) { 
+
+                    .ptc-media { max-height: 220px; }
+
+                    .cp-btn { width: 100%; }
+
+                    .ptc-action-group { width: 100%; align-items: stretch; }
+
+                    .ptc-abo-wrapper { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+                    .ptc-abo-tag { width: auto; }
+
+                }
+
             `}</style>
 
-            <div className="cp-unified-wrap">
-                <section className="cp-hero">
-                    <div className="cp-hero-inner">
-                        <div className="cp-hero-eyebrow">{heroEyebrow}</div>
-                        <h1 className="cp-hero-title">{heroTitle}</h1>
-                        <p className="cp-hero-desc">{heroDesc}</p>
-                        <div className="cp-hero-scroll">
-                            <span className="cp-hero-scroll-underline">
-                                {heroScrollText.split(" ")[0]}{" "}
-                                {heroScrollText.split(" ")[1]}
-                            </span>
-                            {heroScrollText.split(" ").slice(2).join(" ")} ↓
-                        </div>
-                    </div>
-                </section>
 
-                <section id="behandlungen" className="cp-list-section">
-                    <div className="cp-container">
-                        <div className="cp-list-header">
-                            <h2 className="cp-list-title">Behandlungen</h2>
-                            <div className="cp-list-badge">
-                                {totalTreatments} Angebote
+
+            <article className="ptc-box">
+
+                <div className="ptc-media">
+
+                    <img
+
+                        src={image}
+
+                        alt={title}
+
+                        className="ptc-img"
+
+                        loading="lazy"
+
+                    />
+
+                    <div
+
+                        style={{
+
+                            position: "absolute",
+
+                            inset: 0,
+
+                            background: textColor,
+
+                            opacity: 0,
+
+                            mixBlendMode: "overlay",
+
+                            transition: "opacity 0.4s",
+
+                        }}
+
+                    />
+
+                </div>
+
+                <div className="ptc-details">
+
+                    {hasHighlight && (
+
+                        <div className="ptc-highlight-box">
+
+                            <div className="ptc-highlight-icon">
+
+                                {HIGHLIGHT_ICONS[highlightIcon] ||
+
+                                    HIGHLIGHT_ICONS["gift"]}
+
                             </div>
+
+                            <div className="ptc-highlight-text">
+
+                                {savingLabel && (
+
+                                    <span className="ptc-saving-label">
+
+                                        {savingLabel}
+
+                                    </span>
+
+                                )}
+
+                                {teaserText && (
+
+                                    <span className="ptc-teaser-text">
+
+                                        {teaserText}
+
+                                    </span>
+
+                                )}
+
+                            </div>
+
                         </div>
 
-                        {visibleCategories.map((category) => (
+                    )}
+
+
+
+                    {/* VÉDŐKONTÉNER: Ez a blokk sosem esik szét Flexbox nyúlásnál */}
+
+                    <div className="ptc-content-group">
+
+                        <div className="ptc-meta-line">
+
+                            {duration && duration !== "Variabel" && (
+
+                                <span className="ptc-tag">
+
+                                    <IconClock /> {duration}
+
+                                </span>
+
+                            )}
+
+                            {price && (
+
+                                <span className="ptc-tag ptc-tag--price">
+
+                                    {price}
+
+                                </span>
+
+                            )}
+
+                        </div>
+
+
+
+                        <h3 className="ptc-title">{title}</h3>
+
+                        <div className="ptc-desc-wrap">{description}</div>
+
+                    </div>
+
+
+
+                    {/* GOMB & BÉRLETEK: Automatikusan letolva a kártya legaljára */}
+
+                    <div className="ptc-action-group">
+
+                        {(priceAbo1 || priceAbo2 || priceAbo3) && (
+
+                            <div className="ptc-abo-wrapper">
+
+                                {priceAbo1 && (
+
+                                    <div className="ptc-abo-tag">
+
+                                        <IconSmallCheck />
+
+                                        <span>{priceAbo1}</span>
+
+                                    </div>
+
+                                )}
+
+                                {priceAbo2 && (
+
+                                    <div className="ptc-abo-tag">
+
+                                        <IconSmallCheck />
+
+                                        <span>{priceAbo2}</span>
+
+                                    </div>
+
+                                )}
+
+                                {priceAbo3 && (
+
+                                    <div className="ptc-abo-tag ptc-abo-tag--solid">
+
+                                        <IconSmallStar />
+
+                                        <span>{priceAbo3}</span>
+
+                                    </div>
+
+                                )}
+
+                            </div>
+
+                        )}
+
+
+
+                        <motion.button
+
+                            type="button"
+
+                            onClick={() => setIsOpen(true)}
+
+                            whileTap={{ scale: 0.98 }}
+
+                            className="cp-btn"
+
+                            style={{ background: accentColor }}
+
+                        >
+
+                            Jetzt Buchen
+
+                        </motion.button>
+
+                    </div>
+
+                </div>
+
+            </article>
+
+
+
+            {/* NAPTÁR ÉS NATIVE SUCCESS MODAL INTEGRÁCIÓ */}
+
+            <AnimatePresence>
+
+                {isOpen && (
+
+                    <>
+
+                        <motion.div
+
+                            initial={{ opacity: 0 }}
+
+                            animate={{ opacity: 1 }}
+
+                            exit={{ opacity: 0 }}
+
+                            onClick={() => setIsOpen(false)}
+
+                            style={{
+
+                                position: "fixed",
+
+                                inset: 0,
+
+                                background: "rgba(58,48,40,0.35)",
+
+                                zIndex: 9998,
+
+                                backdropFilter: "blur(6px)",
+
+                                WebkitBackdropFilter: "blur(6px)",
+
+                            }}
+
+                        />
+
+                        <motion.div
+
+                            initial={
+
+                                isMobile
+
+                                    ? { y: "100%" }
+
+                                    : { opacity: 0, scale: 0.98, y: 15 }
+
+                            }
+
+                            animate={
+
+                                isMobile
+
+                                    ? { y: 0 }
+
+                                    : { opacity: 1, scale: 1, y: 0 }
+
+                            }
+
+                            exit={
+
+                                isMobile
+
+                                    ? { y: "100%" }
+
+                                    : { opacity: 0, scale: 0.98, y: 15 }
+
+                            }
+
+                            transition={{
+
+                                type: "spring",
+
+                                damping: 32,
+
+                                stiffness: 220,
+
+                            }}
+
+                            style={
+
+                                isMobile
+
+                                    ? {
+
+                                          position: "fixed",
+
+                                          left: 0,
+
+                                          right: 0,
+
+                                          bottom: 0,
+
+                                          height: "88dvh",
+
+                                          background: bgColor,
+
+                                          borderRadius: "24px 24px 0 0",
+
+                                          zIndex: 9999,
+
+                                          display: "flex",
+
+                                          flexDirection: "column",
+
+                                          overflow: "hidden",
+
+                                      }
+
+                                    : {
+
+                                          position: "fixed",
+
+                                          inset: 0,
+
+                                          margin: "auto",
+
+                                          width: "85vw",
+
+                                          maxWidth: 840,
+
+                                          height: "82vh",
+
+                                          maxHeight: 700,
+
+                                          background: bgColor,
+
+                                          borderRadius: 4,
+
+                                          zIndex: 9999,
+
+                                          display: "flex",
+
+                                          flexDirection: "column",
+
+                                          overflow: "hidden",
+
+                                          border: `1px solid ${accentColor}15`,
+
+                                      }
+
+                            }
+
+                        >
+
                             <div
-                                key={category.id}
-                                className="cp-category-group"
+
+                                style={{
+
+                                    flexShrink: 0,
+
+                                    padding: "24px",
+
+                                    borderBottom: `1px solid ${accentColor}12`,
+
+                                }}
+
                             >
-                                <div className="cp-category-header">
-                                    <h3 className="cp-category-title">
-                                        {category.title}
-                                    </h3>
-                                    <p className="cp-category-lead">
-                                        {category.leadText}
-                                    </p>
+
+                                <div
+
+                                    style={{
+
+                                        fontFamily: "'Montserrat', sans-serif",
+
+                                        fontSize: 18,
+
+                                        color: textColor,
+
+                                    }}
+
+                                >
+
+                                    {title}
+
                                 </div>
-                                <div className="cp-rows">
-                                    {category.items?.map(
-                                        (treatment, itemIdx) => (
-                                            <TreatmentRow
-                                                key={`${category.id}-${itemIdx}`}
-                                                treatment={treatment}
-                                                index={itemIdx}
-                                                onBook={(t: any) =>
-                                                    setSelectedTreatment(t)
-                                                }
-                                                accentColor={accentColor}
-                                                bgColor={heroBgColor}
-                                                textColor={textColor}
-                                                mutedColor={mutedColor}
-                                                borderColor={borderColor}
-                                            />
-                                        )
-                                    )}
-                                </div>
+
                             </div>
-                        ))}
 
-                        <div className="cp-bottom-divider">
-                            <div className="cp-divider-line"></div>
-                            <div className="cp-divider-diamond"></div>
-                            <div className="cp-divider-line"></div>
-                        </div>
-                    </div>
-                </section>
+                            <div
 
-                <BookingModal
-                    treatment={selectedTreatment}
-                    onClose={() => setSelectedTreatment(null)}
-                    accentColor={accentColor}
-                    bgColor="#FFFFFF"
-                    textColor={textColor}
-                    mutedColor={mutedColor}
-                />
-            </div>
+                                style={{
+
+                                    flex: 1,
+
+                                    background: isSuccess ? bgColor : "#FFF",
+
+                                }}
+
+                            >
+
+                                {isSuccess ? (
+
+                                    <div
+
+                                        style={{
+
+                                            display: "flex",
+
+                                            flexDirection: "column",
+
+                                            alignItems: "center",
+
+                                            justifyContent: "center",
+
+                                            height: "100%",
+
+                                            padding: "24px",
+
+                                            textAlign: "center",
+
+                                        }}
+
+                                    >
+
+                                        <div
+
+                                            style={{
+
+                                                width: 56,
+
+                                                height: 56,
+
+                                                borderRadius: "50%",
+
+                                                background: "#FFF",
+
+                                                border: `1px solid ${accentColor}30`,
+
+                                                display: "flex",
+
+                                                alignItems: "center",
+
+                                                justifyContent: "center",
+
+                                                marginBottom: 20,
+
+                                            }}
+
+                                        >
+
+                                            <svg
+
+                                                width="22"
+
+                                                height="22"
+
+                                                viewBox="0 0 24 24"
+
+                                                fill="none"
+
+                                                stroke={accentColor}
+
+                                                strokeWidth="1.5"
+
+                                            >
+
+                                                <polyline points="20 6 9 17 4 12" />
+
+                                            </svg>
+
+                                        </div>
+
+                                        <h3
+
+                                            style={{
+
+                                                fontFamily:
+
+                                                    "'Montserrat', sans-serif",
+
+                                                fontSize: 24,
+
+                                                fontWeight: 300,
+
+                                                color: textColor,
+
+                                            }}
+
+                                        >
+
+                                            Vielen Dank!
+
+                                        </h3>
+
+                                        <p
+
+                                            style={{
+
+                                                fontSize: 14,
+
+                                                color: mutedColor,
+
+                                                maxWidth: 400,
+
+                                                marginBottom: 24,
+
+                                            }}
+
+                                        >
+
+                                            Ihre Reservierung für die Behandlung{" "}
+
+                                            <strong>{title}</strong> war
+
+                                            erfolgreich.
+
+                                        </p>
+
+                                        <button
+
+                                            onClick={() => setIsOpen(false)}
+
+                                            className="cp-btn"
+
+                                            style={{
+
+                                                background: accentColor,
+
+                                                padding: "12px 36px",
+
+                                            }}
+
+                                        >
+
+                                            Schliessen
+
+                                        </button>
+
+                                    </div>
+
+                                ) : iframeSrc ? (
+
+                                    <iframe
+
+                                        src={iframeSrc}
+
+                                        style={{
+
+                                            width: "100%",
+
+                                            height: "100%",
+
+                                            border: "none",
+
+                                            display: "block",
+
+                                        }}
+
+                                        allow="payment"
+
+                                    />
+
+                                ) : (
+
+                                    <div
+
+                                        style={{
+
+                                            display: "flex",
+
+                                            alignItems: "center",
+
+                                            justifyContent: "center",
+
+                                            height: "100%",
+
+                                            color: mutedColor,
+
+                                            fontFamily: "'Inter', sans-serif",
+
+                                            fontSize: 14,
+
+                                        }}
+
+                                    >
+
+                                        Buchungslink nicht verfügbar.
+
+                                    </div>
+
+                                )}
+
+                            </div>
+
+                        </motion.div>
+
+                    </>
+
+                )}
+
+            </AnimatePresence>
+
         </>
+
     )
+
 }
 
-// ─── FRAMER CONTROLS ─────────────────────────────────────────────────────────
-addPropertyControls(BookingPageUnified, {
-    categoryFilter: {
-        type: ControlType.Enum,
-        title: "Kategória Szűrő",
-        options: [
-            "alle",
-            "klassisch",
-            "medizinisch",
-            "qms",
-            "apparative",
-            "ipl",
-        ],
-        optionTitles: [
-            "Összes (Alle)",
-            "Klassische Kosmetik",
-            "Medizinische Kosmetik",
-            "QMS Medicosmetics",
-            "Spezialbehandlungen",
-            "IPL Behandlungen",
-        ],
-        defaultValue: "alle",
-    },
-    customCategories: {
-        type: ControlType.Array,
-        title: "Kezelések & CMS Képek",
-        defaultValue: CATEGORIZED_TREATMENTS,
-        control: {
-            type: ControlType.Object,
-            title: "Kategória",
-            controls: {
-                id: { type: ControlType.String, title: "ID", defaultValue: "cat-id" },
-                category: { type: ControlType.String, title: "Kategória kód", defaultValue: "klassisch" },
-                categoryLabel: { type: ControlType.String, title: "Címke", defaultValue: "Klassische Kosmetik" },
-                title: { type: ControlType.String, title: "Cím", defaultValue: "Behandlung Gruppe" },
-                leadText: { type: ControlType.String, title: "Leírás", defaultValue: "Rövid ismertető szöveg..." },
-                items: {
-                    type: ControlType.Array,
-                    title: "Kezelések",
-                    control: {
-                        type: ControlType.Object,
-                        title: "Kezelés",
-                        controls: {
-                            name: { type: ControlType.String, title: "Név", defaultValue: "Kezelés neve" },
-                            duration: { type: ControlType.String, title: "Időtartam", defaultValue: "60 Min" },
-                            price: { type: ControlType.String, title: "Ár", defaultValue: "150 CHF" },
-                            description: { type: ControlType.String, title: "Leírás", defaultValue: "Részletes leírás..." },
-                            calHref: { type: ControlType.String, title: "Cal.com Link", defaultValue: "https://cal.eu/..." },
-                            imageUrl: { 
-                                type: ControlType.Image, 
-                                title: "CMS Kép (Image)" 
-                            },
-                        },
-                    },
-                },
+
+
+// ─── TÍPUSOK & HOOKOK A BOOKINGPAGEIPL-HEZ ───────────────────────────────────
+
+interface TreatmentSubItem {
+
+    name: string
+
+    duration?: string
+
+    price: string
+
+    description: string
+
+    calHref: string
+
+    imageUrl?: string
+
+    bullets?: { text: string }[]
+
+}
+
+
+
+interface GeneralTreatment {
+
+    id: string
+
+    category: string
+
+    categoryLabel: string
+
+    title: string
+
+    leadText: string
+
+    items: TreatmentSubItem[]
+
+}
+
+
+
+interface BookingPageProps {
+
+    heroEyebrow?: string
+
+    heroTitle?: string
+
+    heroDesc?: string
+
+    heroScrollText?: string
+
+
+
+    feature1Title?: string
+
+    feature1Desc?: string
+
+    feature2Title?: string
+
+    feature2Desc?: string
+
+    feature3Title?: string
+
+    feature3Desc?: string
+
+    flashtestTitle?: string
+
+    flashtestDesc?: string
+
+
+
+    heroBgColor?: string
+
+    introBgColor?: string
+
+    listBgColor?: string
+
+    accentColor?: string
+
+    textColor?: string
+
+    mutedColor?: string
+
+    borderColor?: string
+
+    categoryFilter?: string
+
+}
+
+
+
+function IconClock({ size = 14 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            aria-hidden="true"
+
+            style={{ opacity: 0.6 }}
+
+        >
+
+            <circle
+
+                cx="12"
+
+                cy="12"
+
+                r="9"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+            />
+
+            <path
+
+                d="M12 7v5l3 3"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconTag({ size = 14 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            aria-hidden="true"
+
+            style={{ opacity: 0.6 }}
+
+        >
+
+            <path
+
+                d="M8.5 14.5L4 10V4H10L14.5 8.5"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path
+
+                d="M14.5 8.5L19 13C19.8284 13.8284 19.8284 15.1716 19 16L16 19C15.1716 19.8284 13.8284 19.8284 13 19L8.5 14.5"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <circle cx="7" cy="7" r="1" fill="currentColor" />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconChevronDown({ size = 14 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            aria-hidden="true"
+
+        >
+
+            <path
+
+                d="M6 9l6 6 6-6"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconChevronRight({ size = 12 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 12 12"
+
+            fill="none"
+
+            aria-hidden="true"
+
+            style={{ marginLeft: 8, flexShrink: 0 }}
+
+        >
+
+            <path
+
+                d="M2 6h8M6.5 2.5L10 6l-3.5 3.5"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconClose({ size = 20 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            aria-hidden="true"
+
+        >
+
+            <path
+
+                d="M18 6L6 18M6 6l12 12"
+
+                stroke="currentColor"
+
+                strokeWidth="1.5"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconSkin({ size = 20 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <path
+
+                d="M12 21s-7-4.35-9-9a5 5 0 019-3 5 5 0 019 3c-2 4.65-9 9-9 9z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconShield({ size = 20 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <path
+
+                d="M9 12l2 2 4-4"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path
+
+                d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconSparkles({ size = 20 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <path
+
+                d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6-6.3 4.6 2.3-7.2-6-4.4h7.6z"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+        </svg>
+
+    )
+
+}
+
+
+
+function IconInfo({ size = 24 }: { size?: number }) {
+
+    return (
+
+        <svg
+
+            width={size}
+
+            height={size}
+
+            viewBox="0 0 24 24"
+
+            fill="none"
+
+            stroke="currentColor"
+
+            strokeWidth="1.5"
+
+        >
+
+            <circle
+
+                cx="12"
+
+                cy="12"
+
+                r="10"
+
+                strokeLinecap="round"
+
+                strokeLinejoin="round"
+
+            />
+
+            <path d="M12 16v-4" strokeLinecap="round" strokeLinejoin="round" />
+
+            <path d="M12 8h.01" strokeLinecap="round" strokeLinejoin="round" />
+
+        </svg>
+
+    )
+
+}
+
+
+
+const PLACEHOLDER_IMAGE = "https://i.imgur.com/NfeqbqS.png"
+
+const SCHULTER_IMAGE =
+
+    "https://framerusercontent.com/images/oYVb9w6e6MrqNh41nR5E1E7Ck0.png"
+
+
+
+const CATEGORIZED_IPL_TREATMENTS: GeneralTreatment[] = [
+
+    {
+
+        id: "zone-gesicht",
+
+        category: "gesicht",
+
+        categoryLabel: "Gesicht",
+
+        title: "Gesicht & Kleine Zonen",
+
+        leadText:
+
+            "Sanfte und präzise Haarentfernung für ein klares, gepflegtes Hautbild ohne lästige Härchen.",
+
+        items: [
+
+            {
+
+                name: "IPL Oberlippe",
+
+                description:
+
+                    "Sanfte Haarentfernung für ein klares Gesichtsbild.",
+
+                bullets: [
+
+                    { text: "3er Abo: 230 CHF" },
+
+                    { text: "6er Abo: 440 CHF" },
+
+                ],
+
+                price: "80 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberlippe",
+
             },
-        },
+
+            {
+
+                name: "IPL Kinn",
+
+                description: "Präzise Haarentfernung für ein gepflegtes Kinn.",
+
+                bullets: [
+
+                    { text: "3er Abo: 450 CHF" },
+
+                    { text: "6er Abo: 860 CHF" },
+
+                ],
+
+                price: "160 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-kinn",
+
+            },
+
+            {
+
+                name: "IPL Nacken",
+
+                description: "Klare Konturen durch dauerhafte Haarentfernung.",
+
+                bullets: [
+
+                    { text: "3er Abo: 370 CHF" },
+
+                    { text: "6er Abo: 710 CHF" },
+
+                ],
+
+                price: "130 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-nacken",
+
+            },
+
+            {
+
+                name: "IPL Hände",
+
+                description: "Gepflegte Hände ohne störende Behaarung.",
+
+                bullets: [
+
+                    { text: "3er Abo: 340 CHF" },
+
+                    { text: "6er Abo: 650 CHF" },
+
+                ],
+
+                price: "120 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-hande",
+
+            },
+
+        ],
+
     },
-    heroEyebrow: {
-        type: ControlType.String,
-        title: "Hero Címke",
-        defaultValue: "ONLINE TERMINBUCHUNG",
+
+    {
+
+        id: "zone-koerper",
+
+        category: "koerper",
+
+        categoryLabel: "Körper & Arme",
+
+        title: "Körper & Arme",
+
+        leadText:
+
+            "Dauerhaft glatte Haut für alle Körperpartien. Entdecken Sie unsere schonende IPL-Technologie für den Körper.",
+
+        items: [
+
+            {
+
+                name: "IPL Bikini",
+
+                description: "Perfekt gepflegte Bikinizone mit Langzeiteffekt.",
+
+                bullets: [
+
+                    { text: "3er Abo: 730 CHF" },
+
+                    { text: "6er Abo: 1390 CHF" },
+
+                ],
+
+                price: "260 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini",
+
+            },
+
+            {
+
+                name: "IPL Bikini & Intim",
+
+                description: "Maximale Glätte für empfindliche Bereiche.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1290 CHF" },
+
+                    { text: "6er Abo: 2460 CHF" },
+
+                ],
+
+                price: "460 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini-intim",
+
+            },
+
+            {
+
+                name: "IPL Brust",
+
+                description: "Gründliche Haarentfernung für den Brustbereich.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1100 CHF" },
+
+                    { text: "6er Abo: 2090 CHF" },
+
+                ],
+
+                price: "390 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-brust",
+
+            },
+
+            {
+
+                name: "IPL Bauch",
+
+                description:
+
+                    "Sanfte Behandlung für einen glatten Bauchbereich.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1290 CHF" },
+
+                    { text: "6er Abo: 2460 CHF" },
+
+                ],
+
+                price: "460 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bauch",
+
+            },
+
+            {
+
+                name: "IPL Schulter",
+
+                description: "Ästhetische Ergebnisse für den Schulterbereich.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1100 CHF" },
+
+                    { text: "6er Abo: 2090 CHF" },
+
+                ],
+
+                price: "390 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: SCHULTER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-schulter",
+
+            },
+
+            {
+
+                name: "IPL Ganzer Rücken",
+
+                description:
+
+                    "Dauerhafte Befreiung von Haaren am gesamten Rücken.",
+
+                bullets: [
+
+                    { text: "3er Abo: 2380 CHF" },
+
+                    { text: "6er Abo: 4530 CHF" },
+
+                ],
+
+                price: "850 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganzer-ruecken",
+
+            },
+
+            {
+
+                name: "IPL Unterarme",
+
+                description: "Perfekte Ergebnisse für die Unterarme.",
+
+                bullets: [
+
+                    { text: "3er Abo: 930 CHF" },
+
+                    { text: "6er Abo: 1770 CHF" },
+
+                ],
+
+                price: "330 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterarme",
+
+            },
+
+            {
+
+                name: "IPL Oberarme",
+
+                description: "Dauerhafte Glätte auch für die Oberarme.",
+
+                bullets: [
+
+                    { text: "3er Abo: 930 CHF" },
+
+                    { text: "6er Abo: 1770 CHF" },
+
+                ],
+
+                price: "330 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberarme",
+
+            },
+
+            {
+
+                name: "IPL Ganze Arme",
+
+                description: "Rundum glatte Haut an beiden Armen.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1660 CHF" },
+
+                    { text: "6er Abo: 3160 CHF" },
+
+                ],
+
+                price: "590 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-arme",
+
+            },
+
+        ],
+
     },
-    heroTitle: {
-        type: ControlType.String,
-        title: "Hero Főcím",
-        defaultValue: "Wählen Sie Ihre Behandlung",
+
+    {
+
+        id: "zone-beine",
+
+        category: "beine",
+
+        categoryLabel: "Beine",
+
+        title: "Beine",
+
+        leadText:
+
+            "Das komplette Wohlfühlpaket für dauerhaft seidig glatte Beine.",
+
+        items: [
+
+            {
+
+                name: "IPL Unterschenkel",
+
+                description: "Seidig glatte Unterschenkel für jeden Tag.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1290 CHF" },
+
+                    { text: "6er Abo: 2460 CHF" },
+
+                ],
+
+                price: "460 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterschenkel",
+
+            },
+
+            {
+
+                name: "IPL Oberschenkel",
+
+                description:
+
+                    "Effektive Entfernung unerwünschter Haare am Oberschenkel.",
+
+                bullets: [
+
+                    { text: "3er Abo: 1660 CHF" },
+
+                    { text: "6er Abo: 3160 CHF" },
+
+                ],
+
+                price: "590 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberschenkel",
+
+            },
+
+            {
+
+                name: "IPL Ganze Beine",
+
+                description: "Das komplette Wohlfühlpaket für Ihre Beine.",
+
+                bullets: [
+
+                    { text: "3er Abo: 2550 CHF" },
+
+                    { text: "6er Abo: 4850 CHF" },
+
+                ],
+
+                price: "910 CHF",
+
+                duration: "Variabel",
+
+                imageUrl: PLACEHOLDER_IMAGE,
+
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-beine",
+
+            },
+
+        ],
+
     },
-    heroDesc: {
+
+]
+
+
+
+function TreatmentRow({
+
+    treatment,
+
+    index,
+
+    onBook,
+
+    accentColor,
+
+    bgColor,
+
+    textColor,
+
+    mutedColor,
+
+    borderColor,
+
+}: any) {
+
+    const [open, setOpen] = useState(false)
+
+
+
+    return (
+
+        <div
+
+            className={`cp-row-wrapper ${open ? "is-open" : ""}`}
+
+            style={{ borderColor: open ? accentColor : borderColor }}
+
+        >
+
+            <button
+
+                type="button"
+
+                className="cp-row-header"
+
+                onClick={() => setOpen((v) => !v)}
+
+                aria-expanded={open}
+
+            >
+
+                <div className="cp-row-left">
+
+                    <span className="cp-row-num" style={{ color: accentColor }}>
+
+                        {String(index + 1).padStart(2, "0")}
+
+                    </span>
+
+                    <span className="cp-row-title" style={{ color: textColor }}>
+
+                        {treatment.name}
+
+                    </span>
+
+                </div>
+
+                <div className="cp-row-right">
+
+                    {treatment.duration && (
+
+                        <div
+
+                            className="cp-row-meta"
+
+                            style={{ color: mutedColor }}
+
+                        >
+
+                            <IconClock /> <span>{treatment.duration}</span>
+
+                        </div>
+
+                    )}
+
+                    <div
+
+                        className="cp-row-meta cp-row-price"
+
+                        style={{ color: textColor }}
+
+                    >
+
+                        <IconTag /> <span>{treatment.price}</span>
+
+                    </div>
+
+                    <div
+
+                        className="cp-row-trigger"
+
+                        style={{ color: open ? accentColor : mutedColor }}
+
+                    >
+
+                        <span className="cp-row-toggle-text">
+
+                            {open ? "Details ausblenden" : "Details anzeigen"}
+
+                        </span>
+
+                        <div
+
+                            className="cp-row-toggle-icon"
+
+                            style={{
+
+                                borderColor: open ? accentColor : borderColor,
+
+                                color: open ? accentColor : mutedColor,
+
+                                transform: open
+
+                                    ? "rotate(180deg)"
+
+                                    : "rotate(0deg)",
+
+                            }}
+
+                        >
+
+                            <IconChevronDown />
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </button>
+
+
+
+            <AnimatePresence initial={false}>
+
+                {open && (
+
+                    <motion.div
+
+                        initial={{ height: 0, opacity: 0 }}
+
+                        animate={{ height: "auto", opacity: 1 }}
+
+                        exit={{ height: 0, opacity: 0 }}
+
+                        transition={{ duration: 0.4, ease: SMOOTH_EASE }}
+
+                        style={{ overflow: "hidden" }}
+
+                    >
+
+                        <div
+
+                            className="cp-row-body"
+
+                            style={{ borderTop: `1px dashed ${borderColor}` }}
+
+                        >
+
+                            <div className="cp-row-body-inner">
+
+                                <div className="cp-row-content">
+
+                                    <p
+
+                                        className="cp-row-desc"
+
+                                        style={{ color: mutedColor }}
+
+                                    >
+
+                                        {treatment.description}
+
+                                    </p>
+
+                                    {treatment.bullets &&
+
+                                        treatment.bullets.length > 0 && (
+
+                                            <ul
+
+                                                className="cp-row-bullets"
+
+                                                style={{ color: textColor }}
+
+                                            >
+
+                                                {treatment.bullets.map(
+
+                                                    (b: any, bi: number) => (
+
+                                                        <li key={bi}>
+
+                                                            <span
+
+                                                                style={{
+
+                                                                    color: accentColor,
+
+                                                                    marginRight: 8,
+
+                                                                }}
+
+                                                            >
+
+                                                                •
+
+                                                            </span>
+
+                                                            {b.text}
+
+                                                        </li>
+
+                                                    )
+
+                                                )}
+
+                                            </ul>
+
+                                        )}
+
+                                    <div className="cp-row-action">
+
+                                        <motion.button
+
+                                            type="button"
+
+                                            onClick={(e) => {
+
+                                                e.stopPropagation()
+
+                                                onBook(treatment)
+
+                                            }}
+
+                                            whileHover={{
+
+                                                y: -2,
+
+                                                boxShadow:
+
+                                                    "0 8px 24px rgba(163, 124, 120, 0.25)",
+
+                                                filter: "brightness(1.05)",
+
+                                            }}
+
+                                            whileTap={{ scale: 0.98 }}
+
+                                            transition={{
+
+                                                duration: 0.3,
+
+                                                ease: SMOOTH_EASE,
+
+                                            }}
+
+                                            style={{
+
+                                                display: "inline-flex",
+
+                                                alignItems: "center",
+
+                                                justifyContent: "center",
+
+                                                padding: "14px 32px",
+
+                                                color: "#FFFFFF",
+
+                                                fontFamily:
+
+                                                    "'Montserrat', sans-serif",
+
+                                                fontSize: "11px",
+
+                                                fontWeight: 500,
+
+                                                letterSpacing: "0.16em",
+
+                                                textTransform: "uppercase",
+
+                                                borderRadius:
+
+                                                    "4px" /* Brand Guidelines */,
+
+                                                backgroundColor: accentColor,
+
+                                                boxShadow:
+
+                                                    "0 4px 16px rgba(163, 124, 120, 0.12)" /* Brand Guidelines */,
+
+                                                cursor: "pointer",
+
+                                                border: "none",
+
+                                                outline: "none",
+
+                                                width: "100%",
+
+                                                maxWidth: "max-content",
+
+                                                marginTop: "16px",
+
+                                            }}
+
+                                        >
+
+                                            Jetzt buchen
+
+                                            <IconChevronRight size={12} />
+
+                                        </motion.button>
+
+                                    </div>
+
+                                </div>
+
+                                {treatment.imageUrl && (
+
+                                    <motion.div
+
+                                        className="cp-row-image-wrapper"
+
+                                        initial={{ opacity: 0, scale: 0.95 }}
+
+                                        animate={{ opacity: 1, scale: 1 }}
+
+                                        transition={{
+
+                                            duration: 0.5,
+
+                                            delay: 0.1,
+
+                                            ease: SMOOTH_EASE,
+
+                                        }}
+
+                                    >
+
+                                        <img
+
+                                            src={treatment.imageUrl}
+
+                                            alt={treatment.name}
+
+                                            className="cp-row-image"
+
+                                            loading="lazy"
+
+                                        />
+
+                                    </motion.div>
+
+                                )}
+
+                            </div>
+
+                        </div>
+
+                    </motion.div>
+
+                )}
+
+            </AnimatePresence>
+
+        </div>
+
+    )
+
+}
+
+
+
+// ─── HIÁNYZÓ BOOKING MODAL KOMPONENS PÓTLÁSA ───
+
+function BookingModal({
+
+    treatment,
+
+    onClose,
+
+    accentColor,
+
+    bgColor,
+
+    textColor,
+
+    mutedColor,
+
+}: any) {
+
+    const [isSuccess, setIsSuccess] = useState(false)
+
+    const isMobile = useMemo(
+
+        () => (typeof window !== "undefined" ? window.innerWidth < 768 : true),
+
+        []
+
+    )
+
+
+
+    useEffect(() => {
+
+        if (!treatment) {
+
+            setIsSuccess(false)
+
+            return
+
+        }
+
+        const handleMessage = (e: MessageEvent) => {
+
+            const data = e.data
+
+            if (!data) return
+
+            const type = data?.type || data?.event || ""
+
+            if (
+
+                type === "booking-successful" ||
+
+                type === "bookingSuccessful" ||
+
+                type === "cal:booking-successful" ||
+
+                type === "__cal__booking_successful"
+
+            ) {
+
+                setIsSuccess(true)
+
+            }
+
+        }
+
+        window.addEventListener("message", handleMessage)
+
+        return () => window.removeEventListener("message", handleMessage)
+
+    }, [treatment])
+
+
+
+    const iframeSrc = treatment?.calHref
+
+        ? `${treatment.calHref}?embed=true&theme=light&layout=month_view&hideEventTypeDetails=1`
+
+        : ""
+
+
+
+    return (
+
+        <AnimatePresence>
+
+            {treatment && (
+
+                <>
+
+                    <motion.div
+
+                        initial={{ opacity: 0 }}
+
+                        animate={{ opacity: 1 }}
+
+                        exit={{ opacity: 0 }}
+
+                        onClick={onClose}
+
+                        className="cp-modal-overlay"
+
+                    />
+
+                    <motion.div
+
+                        initial={
+
+                            isMobile
+
+                                ? { y: "100%" }
+
+                                : { opacity: 0, scale: 0.98, y: 15 }
+
+                        }
+
+                        animate={
+
+                            isMobile ? { y: 0 } : { opacity: 1, scale: 1, y: 0 }
+
+                        }
+
+                        exit={
+
+                            isMobile
+
+                                ? { y: "100%" }
+
+                                : { opacity: 0, scale: 0.98, y: 15 }
+
+                        }
+
+                        transition={{
+
+                            type: "spring",
+
+                            damping: 32,
+
+                            stiffness: 220,
+
+                        }}
+
+                        className="cp-modal-content"
+
+                        style={
+
+                            isMobile
+
+                                ? { background: bgColor }
+
+                                : {
+
+                                      background: bgColor,
+
+                                      border: `1px solid ${accentColor}20`,
+
+                                  }
+
+                        }
+
+                    >
+
+                        <div className="cp-modal-header">
+
+                            <div className="cp-modal-drag-handle">
+
+                                <div
+
+                                    style={{
+
+                                        width: 40,
+
+                                        height: 4,
+
+                                        borderRadius: 2,
+
+                                        background: mutedColor,
+
+                                        opacity: 0.3,
+
+                                    }}
+
+                                />
+
+                            </div>
+
+                            <button
+
+                                type="button"
+
+                                onClick={onClose}
+
+                                className="cp-modal-close-btn"
+
+                                style={{ color: textColor }}
+
+                            >
+
+                                <IconClose />
+
+                            </button>
+
+                            <div className="cp-modal-header-info">
+
+                                <h3
+
+                                    style={{
+
+                                        fontFamily: "'Montserrat', sans-serif",
+
+                                        fontSize: 20,
+
+                                        color: textColor,
+
+                                        margin: 0,
+
+                                    }}
+
+                                >
+
+                                    {treatment.name}
+
+                                </h3>
+
+                            </div>
+
+                        </div>
+
+                        <div className="cp-modal-iframe-wrap">
+
+                            {isSuccess ? (
+
+                                <div
+
+                                    style={{
+
+                                        display: "flex",
+
+                                        flexDirection: "column",
+
+                                        alignItems: "center",
+
+                                        justifyContent: "center",
+
+                                        height: "100%",
+
+                                        padding: 32,
+
+                                        textAlign: "center",
+
+                                    }}
+
+                                >
+
+                                    <h3
+
+                                        style={{
+
+                                            fontFamily:
+
+                                                "'Montserrat', sans-serif",
+
+                                            fontSize: 24,
+
+                                            color: textColor,
+
+                                        }}
+
+                                    >
+
+                                        Vielen Dank!
+
+                                    </h3>
+
+                                    <p
+
+                                        style={{
+
+                                            color: mutedColor,
+
+                                            marginBottom: 24,
+
+                                        }}
+
+                                    >
+
+                                        Ihre Reservierung war erfolgreich.
+
+                                    </p>
+
+                                    <button
+
+                                        onClick={onClose}
+
+                                        className="cp-btn"
+
+                                        style={{ background: accentColor }}
+
+                                    >
+
+                                        Schliessen
+
+                                    </button>
+
+                                </div>
+
+                            ) : iframeSrc ? (
+
+                                <iframe
+
+                                    src={iframeSrc}
+
+                                    style={{
+
+                                        width: "100%",
+
+                                        height: "100%",
+
+                                        border: "none",
+
+                                    }}
+
+                                    allow="payment"
+
+                                />
+
+                            ) : (
+
+                                <div
+
+                                    style={{
+
+                                        display: "flex",
+
+                                        alignItems: "center",
+
+                                        justifyContent: "center",
+
+                                        height: "100%",
+
+                                        color: mutedColor,
+
+                                    }}
+
+                                >
+
+                                    Buchungslink nicht verfügbar.
+
+                                </div>
+
+                            )}
+
+                        </div>
+
+                    </motion.div>
+
+                </>
+
+            )}
+
+        </AnimatePresence>
+
+    )
+
+}
+
+
+
+export function BookingPageIPL({
+
+    heroEyebrow = "DAUERHAFTE HAARENTFERNUNG",
+
+    heroTitle = "Die neueste Technologie exklusiv bei uns in Luzern.",
+
+    heroDesc = "Im Gabriellas Beauty Salon setzen wir auf die fortschrittlichste Methode der dauerhaften Haarentfernung: modernste IPL-Technologie. Als eines der ersten Studios in Luzern bieten wir Ihnen diese innovative Lösung, die für ihre Wirksamkeit und Sicherheit bekannt ist.",
+
+    heroScrollText = "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+
+
+
+    feature1Title = "Alle Hauttypen",
+
+    feature1Desc = "Ob helle, dunkle oder besonders feine Haare – mit unserer IPL-Technologie werden unerwünschte Haare effizient und schonend entfernt.",
+
+    feature2Title = "Modernste Technologie",
+
+    feature2Desc = "Dank fortschrittlicher Lichtfilter-Systeme werden nicht nur beeindruckende Ergebnisse erzielt, sondern Ihre Haut wird optimal geschützt.",
+
+    feature3Title = "Vielseitig",
+
+    feature3Desc = "Neben der Haarentfernung bieten wir auch Hautverjüngungs- und Aknebehandlungen an – für eine umfassende Pflege.",
+
+    flashtestTitle = "IPL-Flashtest: Sicherheit für Ihre Haut",
+
+    flashtestDesc = "Ein IPL-Flashtest ist ein kurzer, schmerzfreier Test, bei dem ein kleiner Hautbereich behandelt wird, um die Reaktion Ihrer Haut auf das IPL-Licht zu prüfen. Der Test stellt sicher, dass Ihre Haut die Behandlung gut verträgt. Nach dem Test sollten Sie 24 Stunden warten, um mögliche Reaktionen abzuwarten, bevor die vollständige Behandlung durchgeführt wird. Die Kosten für den IPL-Flashtest betragen 50 CHF. Falls Sie danach ein Abo abschliessen, wird dieser Betrag gutgeschrieben.",
+
+
+
+    heroBgColor = "#F7ECDF",
+
+    introBgColor = "#F7ECDF",
+
+    listBgColor = "#FFFFFF",
+
+    accentColor = "#A6807C",
+
+    textColor = "#3a3028",
+
+    mutedColor = "#7a7369",
+
+    borderColor = "#EFEBE6",
+
+    categoryFilter = "alle",
+
+}: BookingPageProps) {
+
+    const [selectedTreatment, setSelectedTreatment] =
+
+        useState<TreatmentSubItem | null>(null)
+
+
+
+    const isFiltered = categoryFilter && categoryFilter !== "alle"
+
+    const visibleCategories = isFiltered
+
+        ? CATEGORIZED_IPL_TREATMENTS.filter(
+
+              (cat) => cat.category === categoryFilter
+
+          )
+
+        : CATEGORIZED_IPL_TREATMENTS
+
+
+
+    const selectedCategoryData = isFiltered ? visibleCategories[0] : null
+
+    const displayEyebrow = selectedCategoryData
+
+        ? selectedCategoryData.categoryLabel
+
+        : heroEyebrow
+
+    const displayTitle = selectedCategoryData
+
+        ? selectedCategoryData.title
+
+        : heroTitle
+
+    const displayDesc = selectedCategoryData
+
+        ? selectedCategoryData.leadText
+
+        : heroDesc
+
+
+
+    const totalTreatments = visibleCategories.reduce(
+
+        (total, cat) => total + cat.items.length,
+
+        0
+
+    )
+
+
+
+    const handleSmoothScroll = (e: React.MouseEvent<HTMLAnchorElement>) => {
+
+        e.preventDefault()
+
+        const targetElement = document.getElementById("behandlungen")
+
+        if (targetElement) {
+
+            targetElement.scrollIntoView({ behavior: "smooth", block: "start" })
+
+        }
+
+    }
+
+
+
+    return (
+
+        <>
+
+            <style>{`
+
+                .cp-unified-wrap { width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+
+                .cp-hero { width: 100%; background-color: ${heroBgColor}; padding: 100px 24px 80px; display: flex; justify-content: center; text-align: center; }
+
+                .cp-hero-inner { max-width: 900px; display: flex; flex-direction: column; align-items: center; }
+
+                .cp-hero-eyebrow { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; color: ${accentColor}; text-transform: uppercase; margin-bottom: 24px; }
+
+                .cp-hero-title { font-family: 'Montserrat', sans-serif; font-size: clamp(32px, 5vw, 44px); font-weight: 300; color: ${textColor}; line-height: 1.2; margin: 0 0 24px 0; letter-spacing: -0.02em; }
+
+                .cp-hero-desc { font-size: 16px; line-height: 1.7; color: ${mutedColor}; margin: 0 0 48px 0; max-width: 720px; }
+
+                .cp-hero-scroll { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 0.15em; color: ${mutedColor}; text-transform: uppercase; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: color 0.3s ease; }
+
+                .cp-hero-scroll:hover { color: ${accentColor}; }
+
+                .cp-hero-scroll-underline { border-bottom: 1px solid ${accentColor}; padding-bottom: 2px; }
+
+
+
+                .cp-intro-section { width: 100%; background-color: ${introBgColor}; padding: 0px 24px 80px; display: flex; justify-content: center; }
+
+                .cp-intro-container { max-width: 900px; width: 100%; display: flex; flex-direction: column; gap: 56px; }
+
+
+
+                .cp-intro-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+
+                .cp-intro-card { display: flex; flex-direction: column; gap: 16px; }
+
+                .cp-intro-icon { width: 44px; height: 44px; border-radius: 12px; background: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.04); color: ${accentColor}; display: flex; align-items: center; justify-content: center; }
+
+                .cp-intro-card h3 { font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600; color: ${textColor}; margin: 0; line-height: 1.4; }
+
+                .cp-intro-card p { font-size: 14px; line-height: 1.6; color: ${mutedColor}; margin: 0; }
+
+
+
+                .cp-intro-callout { background: #ffffff; position: relative; padding: 32px; border-radius: 12px; display: flex; gap: 24px; align-items: flex-start; box-shadow: 0 8px 24px rgba(0,0,0,0.04); overflow: hidden; }
+
+                .cp-intro-callout::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${accentColor}; }
+
+                
+
+                .cp-callout-icon { color: ${accentColor}; flex-shrink: 0; margin-top: 2px; }
+
+                .cp-callout-text h3 { font-family: 'Inter', sans-serif; font-size: 16px; font-weight: 600; color: ${textColor}; margin: 0 0 8px 0; }
+
+                .cp-callout-text p { font-size: 14.5px; line-height: 1.65; color: ${mutedColor}; margin: 0; }
+
+
+
+                .cp-list-section { width: 100%; background-color: ${listBgColor}; padding: 64px 24px 100px; display: flex; justify-content: center; }
+
+                .cp-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; }
+
+
+
+                .cp-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; padding-bottom: 16px; border-bottom: 1px solid ${borderColor}; }
+
+                .cp-list-title { font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; color: ${mutedColor}; text-transform: uppercase; margin: 0; }
+
+                .cp-list-badge { font-size: 11px; font-weight: 500; color: ${mutedColor}; border: 1px solid ${borderColor}; padding: 6px 14px; border-radius: 20px; }
+
+
+
+                .cp-category-group { margin-bottom: 56px; }
+
+                .cp-category-header { margin-bottom: 24px; padding-left: 8px; }
+
+                .cp-category-title { font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 400; color: ${textColor}; margin: 0 0 8px 0; letter-spacing: -0.01em; }
+
+                .cp-category-lead { font-family: 'Inter', sans-serif; font-size: 14px; color: ${mutedColor}; margin: 0; max-width: 600px; line-height: 1.6; }
+
+
+
+                .cp-rows { display: flex; flex-direction: column; gap: 16px; }
+
+                .cp-row-wrapper { background: #ffffff; border-radius: 12px; border: 1px solid; overflow: hidden; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+
+                .cp-row-wrapper:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.04); transform: translateY(-1px); }
+
+                .cp-row-wrapper.is-open { box-shadow: 0 8px 32px rgba(166, 128, 124, 0.08); }
+
+
+
+                .cp-row-header { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; background: transparent; border: none; outline: none; cursor: pointer; text-align: left; border-radius: 12px; }
+
+                .cp-row-header:focus-visible { outline: 2px solid ${accentColor}; outline-offset: -2px; }
+
+
+
+                .cp-row-left { display: flex; align-items: flex-start; gap: 24px; flex: 1; }
+
+                .cp-row-num { font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 600; margin-top: 2px; opacity: 0.8; }
+
+                .cp-row-title { font-size: 16px; font-weight: 400; line-height: 1.4; max-width: 320px; }
+
+                .cp-row-right { display: flex; align-items: center; gap: 32px; flex-shrink: 0; }
+
+                .cp-row-meta { display: flex; align-items: center; font-size: 13px; font-weight: 400; white-space: nowrap; gap: 6px; }
+
+                .cp-row-price { font-weight: 500; font-family: 'Inter', sans-serif; }
+
+                
+
+                .cp-row-trigger { display: flex; align-items: center; gap: 12px; transition: color 0.3s ease; }
+
+                .cp-row-toggle-text { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+
+                .cp-row-toggle-icon { width: 32px; height: 32px; border-radius: 50%; border: 1px solid; display: flex; align-items: center; justify-content: center; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+
+                .cp-row-header:hover .cp-row-toggle-icon { border-color: ${accentColor} !important; color: ${accentColor} !important; }
+
+
+
+                .cp-row-body { background: linear-gradient(to bottom, rgba(247, 236, 223, 0.15), transparent); }
+
+                .cp-row-body-inner { padding: 24px 32px 32px 70px; display: flex; align-items: stretch; gap: 32px; }
+
+                .cp-row-content { flex: 1; display: flex; flex-direction: column; }
+
+                
+
+                .cp-row-bullets { list-style: none; padding: 0; margin: 0 0 24px 0; display: flex; flex-direction: column; gap: 8px; }
+
+                .cp-row-bullets li { font-size: 14px; display: flex; align-items: flex-start; }
+
+
+
+                /* AKKORDION KÉP JAVÍTÁSA: 180px széles, 16/10 arány */
+
+                .cp-row-image-wrapper { 
+
+                    width: 180px; 
+
+                    flex-shrink: 0; 
+
+                    border-radius: 8px; 
+
+                    overflow: hidden; 
+
+                    aspect-ratio: 16 / 10; 
+
+                    border: 1px solid ${borderColor}; 
+
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+
+                }
+
+                .cp-row-image { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
+
+                .cp-row-wrapper.is-open:hover .cp-row-image { transform: scale(1.03); }
+
+
+
+                .cp-row-desc { font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; max-width: 600px; }
+
+                .cp-row-action { margin-top: auto; } 
+
+
+
+                .cp-bottom-divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 64px; opacity: 0.5; }
+
+                .cp-divider-line { height: 1px; width: 120px; background: ${borderColor}; }
+
+                .cp-divider-diamond { width: 6px; height: 6px; background: ${accentColor}; transform: rotate(45deg); }
+
+
+
+                .cp-modal-overlay {
+
+                    position: fixed; inset: 0; background: rgba(28,20,15,0.45); z-index: 9998;
+
+                    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+
+                    display: flex; justify-content: center; align-items: center;
+
+                }
+
+                .cp-modal-content {
+
+                    width: 100%; max-width: 720px; height: 85vh; max-height: 800px;
+
+                    border-radius: 24px; display: flex; flex-direction: column; overflow: hidden;
+
+                    box-shadow: 0 24px 64px rgba(0,0,0,0.2); position: relative;
+
+                }
+
+                .cp-modal-header { flex-shrink: 0; z-index: 2; position: relative; }
+
+                .cp-modal-drag-handle { display: none; } 
+
+                .cp-modal-close-btn {
+
+                    position: absolute; top: 16px; right: 16px; width: 40px; height: 40px;
+
+                    display: flex; align-items: center; justify-content: center;
+
+                    background: transparent; border: none; cursor: pointer; border-radius: 50%;
+
+                    transition: background 0.2s ease;
+
+                }
+
+                .cp-modal-close-btn:hover { background: rgba(0,0,0,0.05); }
+
+                .cp-modal-header-info { padding: 24px 24px 16px; }
+
+                .cp-modal-iframe-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; background: #ffffff; }
+
+
+
+                @media (max-width: 768px) {
+
+                    .cp-hero { padding: 80px 20px 40px; }
+
+                    .cp-intro-section { padding: 0px 20px 40px; }
+
+                    .cp-intro-grid { grid-template-columns: 1fr; gap: 24px; }
+
+                    .cp-intro-callout { flex-direction: column; gap: 16px; padding: 24px; }
+
+                    .cp-list-section { padding: 40px 20px 80px; }
+
+                    .cp-category-header { padding-left: 0; }
+
+                    .cp-category-title { font-size: 20px; }
+
+                    
+
+                    .cp-row-header { flex-direction: column; align-items: flex-start; padding: 20px; gap: 20px; }
+
+                    .cp-row-right { width: 100%; justify-content: flex-start; padding-left: 42px; gap: 16px; flex-wrap: wrap; }
+
+                    .cp-row-toggle-text { display: none; }
+
+                    .cp-row-trigger { margin-left: auto; }
+
+                    
+
+                    .cp-row-body-inner { padding: 20px 20px 24px 20px; flex-direction: column-reverse; gap: 24px; }
+
+                    .cp-row-image-wrapper { width: 100%; aspect-ratio: 16 / 9; }
+
+
+
+                    .cp-modal-overlay { align-items: flex-end; }
+
+                    .cp-modal-content {
+
+                        height: 90dvh; max-height: none; max-width: 100%;
+
+                        border-radius: 24px 24px 0 0;
+
+                    }
+
+                    .cp-modal-drag-handle { display: flex; justify-content: center; padding: 16px 0; cursor: grab; }
+
+                    .cp-modal-header-info { padding: 0 24px 16px; }
+
+                }
+
+            `}</style>
+
+
+
+            <div className="cp-unified-wrap">
+
+                {/* ─── HERO ─── */}
+
+                <section className="cp-hero">
+
+                    <div className="cp-hero-inner">
+
+                        <div className="cp-hero-eyebrow">{displayEyebrow}</div>
+
+                        <h1 className="cp-hero-title">{displayTitle}</h1>
+
+                        <p className="cp-hero-desc">{displayDesc}</p>
+
+                        <a
+
+                            href="#behandlungen"
+
+                            onClick={handleSmoothScroll}
+
+                            className="cp-hero-scroll"
+
+                        >
+
+                            <span className="cp-hero-scroll-underline">
+
+                                {heroScrollText.split(" ")[0]}{" "}
+
+                                {heroScrollText.split(" ")[1]}
+
+                            </span>
+
+                            {heroScrollText.split(" ").slice(2).join(" ")} ↓
+
+                        </a>
+
+                    </div>
+
+                </section>
+
+
+
+                {/* ─── INTRO ─── */}
+
+                <section className="cp-intro-section">
+
+                    <div className="cp-intro-container">
+
+                        <div className="cp-intro-grid">
+
+                            <div className="cp-intro-card">
+
+                                <div className="cp-intro-icon">
+
+                                    <IconSkin />
+
+                                </div>
+
+                                <h3>{feature1Title}</h3>
+
+                                <p>{feature1Desc}</p>
+
+                            </div>
+
+                            <div className="cp-intro-card">
+
+                                <div className="cp-intro-icon">
+
+                                    <IconShield />
+
+                                </div>
+
+                                <h3>{feature2Title}</h3>
+
+                                <p>{feature2Desc}</p>
+
+                            </div>
+
+                            <div className="cp-intro-card">
+
+                                <div className="cp-intro-icon">
+
+                                    <IconSparkles />
+
+                                </div>
+
+                                <h3>{feature3Title}</h3>
+
+                                <p>{feature3Desc}</p>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div className="cp-intro-callout">
+
+                            <div className="cp-callout-icon">
+
+                                <IconInfo />
+
+                            </div>
+
+                            <div className="cp-callout-text">
+
+                                <h3>{flashtestTitle}</h3>
+
+                                <p>{flashtestDesc}</p>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+
+                {/* ─── KEZELÉSEK LISTÁJA ─── */}
+
+                <section id="behandlungen" className="cp-list-section">
+
+                    <div className="cp-container">
+
+                        <div className="cp-list-header">
+
+                            <h2 className="cp-list-title">Behandlungen</h2>
+
+                            <div className="cp-list-badge">
+
+                                {totalTreatments} Angebote
+
+                            </div>
+
+                        </div>
+
+
+
+                        {visibleCategories.map((category) => (
+
+                            <div
+
+                                key={category.id}
+
+                                className="cp-category-group"
+
+                            >
+
+                                {categoryFilter === "alle" && (
+
+                                    <div className="cp-category-header">
+
+                                        <h3 className="cp-category-title">
+
+                                            {category.title}
+
+                                        </h3>
+
+                                        <p className="cp-category-lead">
+
+                                            {category.leadText}
+
+                                        </p>
+
+                                    </div>
+
+                                )}
+
+                                <div className="cp-rows">
+
+                                    {category.items.map(
+
+                                        (treatment, itemIdx) => (
+
+                                            <TreatmentRow
+
+                                                key={`${category.id}-${itemIdx}`}
+
+                                                treatment={treatment}
+
+                                                index={itemIdx}
+
+                                                onBook={(t: any) =>
+
+                                                    setSelectedTreatment(t)
+
+                                                }
+
+                                                accentColor={accentColor}
+
+                                                bgColor={heroBgColor}
+
+                                                textColor={textColor}
+
+                                                mutedColor={mutedColor}
+
+                                                borderColor={borderColor}
+
+                                            />
+
+                                        )
+
+                                    )}
+
+                                </div>
+
+                            </div>
+
+                        ))}
+
+
+
+                        <div className="cp-bottom-divider">
+
+                            <div className="cp-divider-line"></div>
+
+                            <div className="cp-divider-diamond"></div>
+
+                            <div className="cp-divider-line"></div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+
+                <BookingModal
+
+                    treatment={selectedTreatment}
+
+                    onClose={() => setSelectedTreatment(null)}
+
+                    accentColor={accentColor}
+
+                    bgColor="#ffffff"
+
+                    textColor={textColor}
+
+                    mutedColor={mutedColor}
+
+                />
+
+            </div>
+
+        </>
+
+    )
+
+}
+
+
+
+addPropertyControls(PremiumTreatmentCard, {
+
+    highlightIcon: {
+
+        type: ControlType.Enum,
+
+        title: "Kiemelés Ikon",
+
+        options: ["star", "sparkles", "tag", "gift", "award"],
+
+        optionTitles: ["Csillag", "Szikra", "Címke", "Ajándék", "Trófea"],
+
+        defaultValue: "gift",
+
+    },
+
+    savingLabel: {
+
         type: ControlType.String,
-        title: "Hero Leírás",
+
+        title: "Felső Kiemelt Címke",
+
         defaultValue:
-            "Buchen Sie Ihren Wunschtermin unkompliziert online. Wählen Sie untenstehend Ihre Behandlung aus, um freie Termine zu sehen.",
-        displayTextArea: true,
+
+            "TIEFENREINIGUNG UND HAUTERNEUERUNG FÜR EINEN EBENMÄSSIGEN TEINT.",
+
     },
-    heroScrollText: {
+
+    teaserText: {
+
         type: ControlType.String,
-        title: "Görgető Szöveg",
-        defaultValue: "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+
+        title: "Teaser Szöveg",
+
+        defaultValue: "",
+
     },
-    heroBgColor: {
+
+
+
+    stepNumber: {
+
+        type: ControlType.String,
+
+        title: "Ghost Háttérszám",
+
+        defaultValue: "01",
+
+    },
+
+    title: {
+
+        type: ControlType.String,
+
+        title: "Kezelés Neve",
+
+        defaultValue: "Microdermabrasion",
+
+    },
+
+    description: { type: ControlType.RichText, title: "Leírás (Rich Text)" },
+
+    duration: {
+
+        type: ControlType.String,
+
+        title: "Időtartam",
+
+        defaultValue: "",
+
+    },
+
+    image: { type: ControlType.Image, title: "Kép" },
+
+    calHref: {
+
+        type: ControlType.String,
+
+        title: "Cal.com URL",
+
+        defaultValue:
+
+            "https://cal.eu/gabriellasbeauty/klassische-gesichtsbehandlung",
+
+    },
+
+
+
+    price: {
+
+        type: ControlType.String,
+
+        title: "Alap Ár (Felső Tag)",
+
+        defaultValue: "165 CHF",
+
+    },
+
+
+
+    priceAbo1: {
+
+        type: ControlType.String,
+
+        title: "1. Bérlet Kártya",
+
+        defaultValue: "price abo",
+
+    },
+
+    priceAbo2: {
+
+        type: ControlType.String,
+
+        title: "2. Bérlet Kártya",
+
+        defaultValue: "price abo",
+
+    },
+
+    priceAbo3: {
+
+        type: ControlType.String,
+
+        title: "3. Bérlet (Teli)",
+
+        defaultValue: "price abo",
+
+    },
+
+
+
+    bgColor: {
+
         type: ControlType.Color,
-        title: "Hero Háttér (Bézs)",
+
+        title: "Háttér Szín",
+
         defaultValue: "#F7ECDF",
+
     },
-    listBgColor: {
-        type: ControlType.Color,
-        title: "Lista Háttér (Fehér)",
-        defaultValue: "#FFFFFF",
-    },
+
     accentColor: {
+
         type: ControlType.Color,
-        title: "Arculati Szín",
+
+        title: "Accent Szín",
+
         defaultValue: "#A6807C",
+
     },
+
     textColor: {
+
         type: ControlType.Color,
-        title: "Szöveg Színe",
+
+        title: "Szöveg Szín",
+
         defaultValue: "#3A3028",
+
     },
+
     mutedColor: {
+
         type: ControlType.Color,
+
         title: "Halvány Szöveg",
+
         defaultValue: "#7A7369",
+
     },
-    borderColor: {
-        type: ControlType.Color,
-        title: "Keret Színe",
-        defaultValue: "#EFEBE6",
-    },
+
 })
+
+
+
+addPropertyControls(BookingPageIPL, {
+
+    categoryFilter: {
+
+        type: ControlType.Enum,
+
+        title: "Zóna Szűrő",
+
+        options: ["alle", "gesicht", "koerper", "beine"],
+
+        optionTitles: [
+
+            "Összes Zóna (Alle)",
+
+            "Gesicht",
+
+            "Körper & Arme",
+
+            "Beine",
+
+        ],
+
+        defaultValue: "alle",
+
+    },
+
+    heroEyebrow: {
+
+        type: ControlType.String,
+
+        title: "Hero Címke",
+
+        defaultValue: "DAUERHAFTE HAARENTFERNUNG",
+
+    },
+
+    heroTitle: {
+
+        type: ControlType.String,
+
+        title: "Hero Főcím",
+
+        defaultValue: "Die neueste Technologie exklusiv bei uns in Luzern.",
+
+    },
+
+    heroDesc: {
+
+        type: ControlType.String,
+
+        title: "Hero Leírás",
+
+        defaultValue:
+
+            "Im Gabriellas Beauty Salon setzen wir auf die fortschrittlichste Methode der dauerhaften Haarentfernung: modernste IPL-Technologie. Als eines der ersten Studios in Luzern bieten wir Ihnen diese innovative Lösung, die für ihre Wirksamkeit und Sicherheit bekannt ist.",
+
+        displayTextArea: true,
+
+    },
+
+    heroScrollText: {
+
+        type: ControlType.String,
+
+        title: "Görgető Szöveg",
+
+        defaultValue: "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+
+    },
+
+
+
+    feature1Title: {
+
+        type: ControlType.String,
+
+        title: "Érv 1 Cím",
+
+        defaultValue: "Alle Hauttypen",
+
+    },
+
+    feature1Desc: {
+
+        type: ControlType.String,
+
+        title: "Érv 1 Leírás",
+
+        displayTextArea: true,
+
+        defaultValue:
+
+            "Ob helle, dunkle oder besonders feine Haare – mit unserer IPL-Technologie werden unerwünschte Haare effizient und schonend entfernt.",
+
+    },
+
+
+
+    feature2Title: {
+
+        type: ControlType.String,
+
+        title: "Érv 2 Cím",
+
+        defaultValue: "Modernste Technologie",
+
+    },
+
+    feature2Desc: {
+
+        type: ControlType.String,
+
+        title: "Érv 2 Leírás",
+
+        displayTextArea: true,
+
+        defaultValue:
+
+            "Dank fortschrittlicher Lichtfilter-Systeme werden nicht nur beeindruckende Ergebnisse erzielt, sondern Ihre Haut wird optimal geschützt.",
+
+    },
+
+
+
+    feature3Title: {
+
+        type: ControlType.String,
+
+        title: "Érv 3 Cím",
+
+        defaultValue: "Vielseitig",
+
+    },
+
+    feature3Desc: {
+
+        type: ControlType.String,
+
+        title: "Érv 3 Leírás",
+
+        displayTextArea: true,
+
+        defaultValue:
+
+            "Neben der Haarentfernung bieten wir auch Hautverjüngungs- und Aknebehandlungen an – für eine umfassende Pflege.",
+
+    },
+
+
+
+    flashtestTitle: {
+
+        type: ControlType.String,
+
+        title: "Flashtest Cím",
+
+        defaultValue: "IPL-Flashtest: Sicherheit für Ihre Haut",
+
+    },
+
+    flashtestDesc: {
+
+        type: ControlType.String,
+
+        title: "Flashtest Leírás",
+
+        displayTextArea: true,
+
+        defaultValue:
+
+            "Ein IPL-Flashtest ist ein kurzer, schmerzfreier Test, bei dem ein kleiner Hautbereich behandelt wird, um die Reaktion Ihrer Haut auf das IPL-Licht zu prüfen. Der Test stellt sicher, dass Ihre Haut die Behandlung gut verträgt. Nach dem Test sollten Sie 24 Stunden warten, um mögliche Reaktionen abzuwarten, bevor die vollständige Behandlung durchgeführt wird. Die Kosten für den IPL-Flashtest betragen 50 CHF. Falls Sie danach ein Abo abschliessen, wird dieser Betrag gutgeschrieben.",
+
+    },
+
+
+
+    heroBgColor: {
+
+        type: ControlType.Color,
+
+        title: "Hero Háttér",
+
+        defaultValue: "#F7ECDF",
+
+    },
+
+    introBgColor: {
+
+        type: ControlType.Color,
+
+        title: "Intro Háttér",
+
+        defaultValue: "#F7ECDF",
+
+    },
+
+    listBgColor: {
+
+        type: ControlType.Color,
+
+        title: "Lista Háttér",
+
+        defaultValue: "#FFFFFF",
+
+    },
+
+    accentColor: {
+
+        type: ControlType.Color,
+
+        title: "Arculati Szín",
+
+        defaultValue: "#A6807C",
+
+    },
+
+    textColor: {
+
+        type: ControlType.Color,
+
+        title: "Szöveg Színe",
+
+        defaultValue: "#3A3028",
+
+    },
+
+    mutedColor: {
+
+        type: ControlType.Color,
+
+        title: "Halvány Szöveg",
+
+        defaultValue: "#7A7369",
+
+    },
+
+    borderColor: {
+
+        type: ControlType.Color,
+
+        title: "Keret Színe",
+
+        defaultValue: "#EFEBE6",
+
+    },
+
+}) 
+
