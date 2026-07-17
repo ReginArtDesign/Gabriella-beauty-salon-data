@@ -1,0 +1,1181 @@
+// @ts-nocheck
+import { useState, useEffect } from "react"
+import { addPropertyControls, ControlType } from "framer"
+import { motion, AnimatePresence } from "framer-motion"
+
+// ─── TÍPUSOK ─────────────────────────────────────────────────────────────────
+interface TreatmentSubItem {
+    name: string
+    duration?: string
+    price: string
+    description: string
+    calHref: string
+    imageUrl?: string
+}
+
+interface GeneralTreatment {
+    id: string
+    category: string
+    categoryLabel: string
+    title: string
+    leadText: string
+    items: TreatmentSubItem[]
+}
+
+interface BookingPageProps {
+    heroEyebrow?: string
+    heroTitle?: string
+    heroDesc?: string
+    heroScrollText?: string
+    heroBgColor?: string
+    listBgColor?: string
+    accentColor?: string
+    textColor?: string
+    mutedColor?: string
+    borderColor?: string
+    categoryFilter?: string
+}
+
+// ─── CUSTOM HOOK A RESZPONSZÍV VISELKEDÉSHEZ ─────────────────────────────────
+function useMediaQuery(query: string) {
+    const [matches, setMatches] = useState(false)
+    useEffect(() => {
+        const media = window.matchMedia(query)
+        if (media.matches !== matches) setMatches(media.matches)
+        const listener = () => setMatches(media.matches)
+        media.addEventListener("change", listener)
+        return () => media.removeEventListener("change", listener)
+    }, [matches, query])
+    return matches
+}
+
+// ─── IKONOK ──────────────────────────────────────────────────────────────────
+function IconClock({ size = 14 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+            style={{ opacity: 0.6 }}
+        >
+            <circle
+                cx="12"
+                cy="12"
+                r="9"
+                stroke="currentColor"
+                strokeWidth="1.5"
+            />
+            <path
+                d="M12 7v5l3 3"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+function IconTag({ size = 14 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+            style={{ opacity: 0.6 }}
+        >
+            <path
+                d="M8.5 14.5L4 10V4H10L14.5 8.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M14.5 8.5L19 13C19.8284 13.8284 19.8284 15.1716 19 16L16 19C15.1716 19.8284 13.8284 19.8284 13 19L8.5 14.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <circle cx="7" cy="7" r="1" fill="currentColor" />
+        </svg>
+    )
+}
+
+function IconChevronDown({ size = 14 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M6 9l6 6 6-6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+function IconChevronRight({ size = 12 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+            style={{ marginLeft: 8, flexShrink: 0 }}
+        >
+            <path
+                d="M2 6h8M6.5 2.5L10 6l-3.5 3.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+function IconClose({ size = 20 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M18 6L6 18M6 6l12 12"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+const SMOOTH_EASE = [0.16, 1, 0.3, 1]
+const PLACEHOLDER_IMAGE = "https://i.imgur.com/NfeqbqS.png"
+
+// ─── BEÉGETETT ADATBÁZIS ──────────────────────────────────────────────────────
+const CATEGORIZED_TREATMENTS: GeneralTreatment[] = [
+    {
+        id: "klassische-kosmetik",
+        category: "klassisch",
+        categoryLabel: "Klassische Kosmetik",
+        title: "Klassische Gesichtsbehandlungen",
+        leadText:
+            "Traditionelle Gesichtspflege und entspannende Massagen für ein revitalisiertes, strahlendes Hautbild.",
+        items: [
+            {
+                name: "Klassische Gesichtsbehandlung",
+                duration: "90 Min",
+                price: "165 CHF",
+                description:
+                    "Ein Einzeltermin zur umfassenden Gesichtsbehandlung, abgestimmt auf Ihren Hauttyp.",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/klassische-gesichtsbehandlung",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Bellabaci Gesichtsmassage",
+                duration: "30 Min",
+                price: "ab 60 CHF",
+                description:
+                    "Exklusive Gesichtsmassage zur Tiefenentspannung. Nur während einer Gesichtsbehandlung buchbar.",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/bellabaci-gesichtsmassage",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+    {
+        id: "medizinische-kosmetik",
+        category: "medizinisch",
+        categoryLabel: "Medizinische Kosmetik",
+        title: "Apparative & Medizinische Kosmetik",
+        leadText:
+            "Fortschrittliche dermatologische Treatments für tiefenwirksame Regeneration und sichtbare Hauterneuerung.",
+        items: [
+            {
+                name: "Gesichtsbehandlung mit Microdermabrasion (Einzel)",
+                price: "165 CHF",
+                description:
+                    "Sanftes mechanisches Peeling zur Verfeinerung des Hautbildes.",
+                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Gesichtsbehandlung mit Microdermabrasion (3er Abo)",
+                price: "419 CHF",
+                description:
+                    "3 Behandlungen für langanhaltende Resultate. (Sie sparen 76 CHF im Vergleich zur Einzelbuchung)",
+                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Gesichtsbehandlung mit Microdermabrasion (5er Abo)",
+                price: "655 CHF",
+                description:
+                    "5 intensive Kuren für maximale Hauterneuerung. (Sie sparen 170 CHF im Vergleich zur Einzelbuchung)",
+                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Gesichtsbehandlung mit Needling (Einzel)",
+                price: "180 CHF",
+                description:
+                    "Minimal-invasives Treatment zur Kollagenstimulation.",
+                calHref: "https://cal.eu/gabriellasbeauty/needling",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Gesichtsbehandlung mit Needling (3er Abo)",
+                price: "490 CHF",
+                description:
+                    "3 intensive Needling-Sitzungen. (Sie sparen 50 CHF im Vergleich zur Einzelbuchung)",
+                calHref: "https://cal.eu/gabriellasbeauty/needling",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Gesichtsbehandlung mit Needling (5er Abo)",
+                price: "780 CHF",
+                description:
+                    "5 Kuren für maximale Faltenglättung. (Sie sparen 120 CHF im Vergleich zur Einzelbuchung)",
+                calHref: "https://cal.eu/gabriellasbeauty/needling",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+    {
+        id: "green-peel",
+        category: "medizinisch",
+        categoryLabel: "Medizinische Kosmetik",
+        title: "Green Peel Kräuterschälkur",
+        leadText:
+            "Die originale, weltbekannte Methode zur natürlichen Hauterneuerung auf rein pflanzlicher Basis.",
+        items: [
+            {
+                name: "Green Peel Fresh Up",
+                price: "180 CHF",
+                description:
+                    "Der Frischekick ohne Schälung. Ideal für Pigmentstörungen und müde Haut.",
+                calHref: "https://cal.eu/gabriellasbeauty/green-peel-fresh-up",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Green Peel Energy",
+                price: "250 CHF",
+                description:
+                    "Intensiver Vitalitätsschub für reifere, anspruchsvolle Hautbilder.",
+                calHref: "https://cal.eu/gabriellasbeauty/green-peel-energy",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Green Peel Klassik",
+                price: "580 CHF",
+                description:
+                    "Die klassische Erneuerungskur. Sichtbare Hautschälung und komplette Regeneration in wenigen Tagen.",
+                calHref: "https://cal.eu/gabriellasbeauty/green-peel-klassik",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+    {
+        id: "qms-medicosmetics",
+        category: "qms",
+        categoryLabel: "QMS Medicosmetics",
+        title: "QMS Systempflege treatments",
+        leadText:
+            "Exklusive zelluläre Verjüngungstechnologie mit medizinischem Collagen. Neu und einmalig in Luzern!",
+        items: [
+            {
+                name: "QMS CLASSIC",
+                duration: "90 Min",
+                price: "225 CHF",
+                description:
+                    "Hautidentische Kollagene für sofort sichtbare Straffung und intensive Hydratation.",
+                calHref: "https://cal.eu/gabriellasbeauty/qms-classic",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "QMS SK Alpha Revital",
+                duration: "120 Min",
+                price: "255 CHF",
+                description:
+                    "Thermo-aktive Revitalisierung zur Entgiftung und Festigung der Gesichtskonturen.",
+                calHref: "https://cal.eu/gabriellasbeauty/qms-sk-alpha-revital",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "QMS OXYGEN",
+                duration: "120 Min",
+                price: "285 CHF",
+                description:
+                    "Hochkonzentrierte Sauerstoff-Behandlung für ultimative Zellregeneration.",
+                calHref: "https://cal.eu/gabriellasbeauty/qms-oxygen",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+    {
+        id: "apparative-spezial",
+        category: "apparative",
+        categoryLabel: "Spezialbehandlungen",
+        title: "Apparative Ästhetik & Anti-Aging",
+        leadText:
+            "Sichtbares Lifting und Gewebestraffung mit modernster Medizintechnik – ganz ohne Skalpell.",
+        items: [
+            {
+                name: "IPL Anti-Aging Behandlung (Pro Sitzung)",
+                price: "200 CHF",
+                description:
+                    "Lichtbasierte Hautverjüngung zur Reduktion von Fältchen und Altersflecken.",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/https-cal.eu-gabriellasbeauty-ipl-anti-aging",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Radiofrequenzbehandlung (Einzel)",
+                price: "225 CHF",
+                description:
+                    "Tiefenwirksame Radiofrequenzströme zur sofortigen Straffung des Bindegewebes.",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Radiofrequenzbehandlung (3er Abo)",
+                price: "450 CHF",
+                description:
+                    "3 Behandlungen für ein langanhaltendes Ergebnis. (Sie sparen 225 CHF – 1 Behandlung gratis!)",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "Radiofrequenzbehandlung (6er Abo)",
+                price: "750 CHF",
+                description:
+                    "Der ultimative Lifting-Zyklus. (Sie sparen massive 600 CHF im Vergleich zur Einzelbuchung!)",
+                calHref:
+                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+    {
+        id: "ipl-behandlungen",
+        category: "ipl",
+        categoryLabel: "IPL Behandlungen",
+        title: "IPL Dauerhafte Haarentfernung",
+        leadText:
+            "Sichere und effektive IPL-Technologie für langanhaltend glatte Haut und ein verjüngtes, ebenmäßiges Hautbild. Buchen Sie Ihren Einzeltermin, Bérletek sind direkt im Studio oder nach der ersten Behandlung buchbar.",
+        items: [
+            {
+                name: "IPL Achseln",
+                price: "ab 160 CHF",
+                description:
+                    "Dauerhaft glatte Achseln durch moderne IPL-Technik.\n\nPreise:\n• Einzelbehandlung: 160 CHF\n• 3er Abo: 450 CHF\n• 6er Abo: 860 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-achseln",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Bikini",
+                price: "ab 260 CHF",
+                description:
+                    "Perfekt gepflegte Bikinizone mit Langzeiteffekt.\n\nPreise:\n• Einzelbehandlung: 260 CHF\n• 3er Abo: 730 CHF\n• 6er Abo: 1390 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Bikini & Intim",
+                price: "ab 460 CHF",
+                description:
+                    "Maximale Glätte für empfindliche Bereiche.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini-intim",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Oberlippe",
+                price: "ab 80 CHF",
+                description:
+                    "Sanfte Haarentfernung für ein klares Gesichtsbild.\n\nPreise:\n• Einzelbehandlung: 80 CHF\n• 3er Abo: 230 CHF\n• 6er Abo: 440 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberlippe",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Kinn",
+                price: "ab 160 CHF",
+                description:
+                    "Präzise Haarentfernung für ein gepflegtes Kinn.\n\nPreise:\n• Einzelbehandlung: 160 CHF\n• 3er Abo: 450 CHF\n• 6er Abo: 860 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-kinn",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Nacken",
+                price: "ab 130 CHF",
+                description:
+                    "Klare Konturen durch dauerhafte Haarentfernung.\n\nPreise:\n• Einzelbehandlung: 130 CHF\n• 3er Abo: 370 CHF\n• 6er Abo: 710 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-nacken",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Unterschenkel",
+                price: "ab 460 CHF",
+                description:
+                    "Seidig glatte Unterschenkel für jeden Tag.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterschenkel",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Oberschenkel",
+                price: "ab 590 CHF",
+                description:
+                    "Effektive Entfernung unerwünschter Haare am Oberschenkel.\n\nPreise:\n• Einzelbehandlung: 590 CHF\n• 3er Abo: 1660 CHF\n• 6er Abo: 3160 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberschenkel",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Ganze Beine",
+                price: "ab 910 CHF",
+                description:
+                    "Das komplette Wohlfühlpaket für Ihre Beine.\n\nPreise:\n• Einzelbehandlung: 910 CHF\n• 3er Abo: 2550 CHF\n• 6er Abo: 4850 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-beine",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Schulter",
+                price: "ab 390 CHF",
+                description:
+                    "Ästhetische Ergebnisse für den Schulterbereich.\n\nPreise:\n• Einzelbehandlung: 390 CHF\n• 3er Abo: 1100 CHF\n• 6er Abo: 2090 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-schulter",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Ganzer Rücken",
+                price: "ab 850 CHF",
+                description:
+                    "Dauerhafte Befreiung von Haaren am gesamten Rücken.\n\nPreise:\n• Einzelbehandlung: 850 CHF\n• 3er Abo: 2380 CHF\n• 6er Abo: 4530 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganzer-ruecken",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Bauch",
+                price: "ab 460 CHF",
+                description:
+                    "Sanfte Behandlung für einen glatten Bauchbereich.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-bauch",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Brust",
+                price: "ab 390 CHF",
+                description:
+                    "Gründliche Haarentfernung für den Brustbereich.\n\nPreise:\n• Einzelbehandlung: 390 CHF\n• 3er Abo: 1100 CHF\n• 6er Abo: 2090 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-brust",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Ganze Arme",
+                price: "ab 590 CHF",
+                description:
+                    "Rundum glatte Haut an beiden Armen.\n\nPreise:\n• Einzelbehandlung: 590 CHF\n• 3er Abo: 1660 CHF\n• 6er Abo: 3160 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-arme",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Unterarme",
+                price: "ab 330 CHF",
+                description:
+                    "Perfekte Ergebnisse für die Unterarme.\n\nPreise:\n• Einzelbehandlung: 330 CHF\n• 3er Abo: 930 CHF\n• 6er Abo: 1770 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterarme",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Oberarme",
+                price: "ab 330 CHF",
+                description:
+                    "Dauerhafte Glätte auch für die Oberarme.\n\nPreise:\n• Einzelbehandlung: 330 CHF\n• 3er Abo: 930 CHF\n• 6er Abo: 1770 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberarme",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+            {
+                name: "IPL Hände",
+                price: "ab 120 CHF",
+                description:
+                    "Gepflegte Hände ohne störende Behaarung.\n\nPreise:\n• Einzelbehandlung: 120 CHF\n• 3er Abo: 340 CHF\n• 6er Abo: 650 CHF",
+                calHref: "https://cal.eu/gabriellasbeauty/ipl-haende",
+                imageUrl: PLACEHOLDER_IMAGE,
+            },
+        ],
+    },
+]
+
+// ─── BOOKING MODAL (Desktop Popup / Mobile Swipe-up + Scroll Lock) ───────────
+function BookingModal({
+    treatment,
+    onClose,
+    accentColor,
+    bgColor,
+    textColor,
+    mutedColor,
+}: any) {
+    const isOpen = !!treatment
+    const isMobile = useMediaQuery("(max-width: 768px)")
+
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = "hidden"
+        } else {
+            document.body.style.overflow = ""
+        }
+        return () => {
+            document.body.style.overflow = ""
+        }
+    }, [isOpen])
+
+    let iframeSrc = ""
+    if (treatment?.calHref) {
+        const baseUrl = treatment.calHref
+        const separator = baseUrl.includes("?") ? "&" : "?"
+        iframeSrc = `${baseUrl}${separator}embed=true&theme=light&layout=month_view&hideEventTypeDetails=1`
+    }
+
+    return (
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    className="cp-modal-overlay"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3, ease: SMOOTH_EASE }}
+                    onClick={onClose}
+                >
+                    <motion.div
+                        className="cp-modal-content"
+                        onClick={(e) => e.stopPropagation()}
+                        initial={
+                            isMobile
+                                ? { y: "100%" }
+                                : { opacity: 0, scale: 0.95, y: 0 }
+                        }
+                        animate={
+                            isMobile ? { y: 0 } : { opacity: 1, scale: 1, y: 0 }
+                        }
+                        exit={
+                            isMobile
+                                ? { y: "100%" }
+                                : { opacity: 0, scale: 0.95, y: 0 }
+                        }
+                        transition={{
+                            type: "spring",
+                            damping: 28,
+                            stiffness: 220,
+                        }}
+                        drag={isMobile ? "y" : false}
+                        dragConstraints={{ top: 0, bottom: 0 }}
+                        dragElastic={{ top: 0.05, bottom: 0.7 }}
+                        onDragEnd={(_e, info) => {
+                            if (
+                                isMobile &&
+                                (info.velocity.y > 400 || info.offset.y > 120)
+                            )
+                                onClose()
+                        }}
+                        style={{ background: bgColor }}
+                        role="dialog"
+                        aria-modal="true"
+                    >
+                        <div
+                            className="cp-modal-header"
+                            style={{ background: bgColor }}
+                        >
+                            {isMobile && (
+                                <div className="cp-modal-drag-handle">
+                                    <div
+                                        style={{
+                                            width: 44,
+                                            height: 5,
+                                            background: mutedColor,
+                                            opacity: 0.3,
+                                            borderRadius: 99,
+                                        }}
+                                    />
+                                </div>
+                            )}
+
+                            {!isMobile && (
+                                <button
+                                    className="cp-modal-close-btn"
+                                    onClick={onClose}
+                                    aria-label="Schließen"
+                                    style={{ color: mutedColor }}
+                                >
+                                    <IconClose />
+                                </button>
+                            )}
+
+                            <div
+                                className="cp-modal-header-info"
+                                style={{
+                                    borderBottom: `1px solid ${mutedColor}20`,
+                                }}
+                            >
+                                <h2
+                                    style={{
+                                        fontFamily: "'Montserrat', sans-serif",
+                                        fontSize: 18,
+                                        color: textColor,
+                                        margin: "0 0 6px 0",
+                                        fontWeight: 500,
+                                        paddingRight: 32,
+                                    }}
+                                >
+                                    {treatment.name}
+                                </h2>
+                                <p
+                                    style={{
+                                        fontFamily: "'Inter', sans-serif",
+                                        fontSize: 13,
+                                        color: mutedColor,
+                                        margin: 0,
+                                        lineHeight: 1.5,
+                                        whiteSpace: "pre-line",
+                                    }}
+                                >
+                                    {treatment.description} <br />
+                                    <br />
+                                    <strong
+                                        style={{
+                                            color: accentColor,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        {treatment.price}
+                                    </strong>
+                                    {treatment.duration &&
+                                        ` • ${treatment.duration}`}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="cp-modal-iframe-wrap">
+                            {iframeSrc ? (
+                                <iframe
+                                    src={iframeSrc}
+                                    style={{
+                                        width: "100%",
+                                        height: "100%",
+                                        border: "none",
+                                        display: "block",
+                                    }}
+                                    title={`Termin buchen: ${treatment.name}`}
+                                    loading="lazy"
+                                />
+                            ) : (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        height: "100%",
+                                        color: mutedColor,
+                                        fontFamily: "'Inter', sans-serif",
+                                        fontSize: 14,
+                                    }}
+                                >
+                                    Buchungslink nicht verfügbar.
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    )
+}
+
+// ─── ACCORDION KÁRTYA ────────────────────────────────────────────────────────
+function TreatmentRow({
+    treatment,
+    index,
+    onBook,
+    accentColor,
+    bgColor,
+    textColor,
+    mutedColor,
+    borderColor,
+}: any) {
+    const [open, setOpen] = useState(false)
+
+    return (
+        <div
+            className={`cp-row-wrapper ${open ? "is-open" : ""}`}
+            style={{ borderColor: open ? accentColor : borderColor }}
+        >
+            <button
+                type="button"
+                className="cp-row-header"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+            >
+                <div className="cp-row-left">
+                    <span className="cp-row-num" style={{ color: accentColor }}>
+                        {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="cp-row-title" style={{ color: textColor }}>
+                        {treatment.name}
+                    </span>
+                </div>
+                <div className="cp-row-right">
+                    {treatment.duration && (
+                        <div
+                            className="cp-row-meta"
+                            style={{ color: mutedColor }}
+                        >
+                            <IconClock /> <span>{treatment.duration}</span>
+                        </div>
+                    )}
+                    <div
+                        className="cp-row-meta cp-row-price"
+                        style={{ color: textColor }}
+                    >
+                        <IconTag /> <span>{treatment.price}</span>
+                    </div>
+                    <div
+                        className="cp-row-trigger"
+                        style={{ color: open ? accentColor : mutedColor }}
+                    >
+                        <span className="cp-row-toggle-text">
+                            {open ? "Details ausblenden" : "Details anzeigen"}
+                        </span>
+                        <div
+                            className="cp-row-toggle-icon"
+                            style={{
+                                borderColor: open ? accentColor : borderColor,
+                                color: open ? accentColor : mutedColor,
+                                transform: open
+                                    ? "rotate(180deg)"
+                                    : "rotate(0deg)",
+                            }}
+                        >
+                            <IconChevronDown />
+                        </div>
+                    </div>
+                </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+                {open && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.4, ease: SMOOTH_EASE }}
+                        style={{ overflow: "hidden" }}
+                    >
+                        <div
+                            className="cp-row-body"
+                            style={{ borderTop: `1px dashed ${borderColor}` }}
+                        >
+                            <div className="cp-row-body-inner">
+                                <div className="cp-row-content">
+                                    <p
+                                        className="cp-row-desc"
+                                        style={{ color: mutedColor }}
+                                    >
+                                        {treatment.description}
+                                    </p>
+                                    <div className="cp-row-action">
+                                        <motion.button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onBook(treatment)
+                                            }}
+                                            whileHover={{
+                                                y: -2,
+                                                boxShadow:
+                                                    "0 8px 24px rgba(163, 124, 120, 0.25)",
+                                                filter: "brightness(1.05)",
+                                            }}
+                                            whileTap={{ scale: 0.98 }}
+                                            transition={{
+                                                duration: 0.3,
+                                                ease: SMOOTH_EASE,
+                                            }}
+                                            style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                padding: "14px 32px",
+                                                color: "#FFFFFF",
+                                                fontFamily:
+                                                    "'Montserrat', sans-serif",
+                                                fontSize: "11px",
+                                                fontWeight: 500,
+                                                letterSpacing: "0.16em",
+                                                textTransform: "uppercase",
+                                                borderRadius: "4px",
+                                                backgroundColor: accentColor,
+                                                boxShadow:
+                                                    "0 4px 16px rgba(163, 124, 120, 0.12)",
+                                                cursor: "pointer",
+                                                border: "none",
+                                                outline: "none",
+                                                width: "100%",
+                                                maxWidth: "max-content",
+                                                marginTop: "16px",
+                                            }}
+                                        >
+                                            Jetzt buchen
+                                            <IconChevronRight size={12} />
+                                        </motion.button>
+                                    </div>
+                                </div>
+                                {treatment.imageUrl && (
+                                    <motion.div
+                                        className="cp-row-image-wrapper"
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        transition={{
+                                            duration: 0.5,
+                                            delay: 0.1,
+                                            ease: SMOOTH_EASE,
+                                        }}
+                                    >
+                                        <img
+                                            src={treatment.imageUrl}
+                                            alt={treatment.name}
+                                            className="cp-row-image"
+                                            loading="lazy"
+                                        />
+                                    </motion.div>
+                                )}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    )
+}
+
+// ─── FŐ KOMPONENS ────────────────────────────────────────────────────────────
+export default function BookingPageUnified({
+    heroEyebrow = "ONLINE TERMINBUCHUNG",
+    heroTitle = "Wählen Sie Ihre Behandlung",
+    heroDesc = "Buchen Sie Ihren Wunschtermin unkompliziert online. Wählen Sie untenstehend Ihre Behandlung aus, um freie Termine zu sehen.",
+    heroScrollText = "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+    heroBgColor = "#F7ECDF",
+    listBgColor = "#FFFFFF",
+    accentColor = "#A6807C",
+    textColor = "#3a3028",
+    mutedColor = "#7a7369",
+    borderColor = "#EFEBE6",
+    categoryFilter = "alle",
+}: BookingPageProps) {
+    const [selectedTreatment, setSelectedTreatment] =
+        useState<TreatmentSubItem | null>(null)
+
+    const isFiltered = categoryFilter && categoryFilter !== "alle"
+    const visibleCategories = isFiltered
+        ? CATEGORIZED_TREATMENTS.filter(
+              (cat) => cat.category === categoryFilter
+          )
+        : CATEGORIZED_TREATMENTS
+
+    const totalTreatments = visibleCategories.reduce(
+        (total, cat) => total + cat.items.length,
+        0
+    )
+
+    return (
+        <>
+            <style>{`
+                /* ALAP BEÁLLÍTÁSOK */
+                .cp-unified-wrap { width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+
+                /* ─── HERO SZEKCIÓ ─── */
+                .cp-hero { width: 100%; background-color: ${heroBgColor}; padding: 100px 24px 80px; display: flex; justify-content: center; text-align: center; }
+                .cp-hero-inner { max-width: 700px; display: flex; flex-direction: column; align-items: center; }
+                .cp-hero-eyebrow { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; color: ${accentColor}; text-transform: uppercase; margin-bottom: 24px; }
+                .cp-hero-title { font-family: 'Montserrat', sans-serif; font-size: clamp(32px, 5vw, 44px); font-weight: 300; color: ${textColor}; line-height: 1.2; margin: 0 0 24px 0; letter-spacing: -0.02em; }
+                .cp-hero-desc { font-size: 16px; line-height: 1.7; color: ${mutedColor}; margin: 0 0 48px 0; max-width: 560px; }
+                .cp-hero-scroll { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 0.15em; color: ${mutedColor}; text-transform: uppercase; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; transition: color 0.3s ease; }
+                .cp-hero-scroll:hover { color: ${accentColor}; }
+                .cp-hero-scroll-underline { border-bottom: 1px solid ${accentColor}; padding-bottom: 2px; }
+
+                /* ─── LISTA SZEKCIÓ ─── */
+                .cp-list-section { width: 100%; background-color: ${listBgColor}; padding: 64px 24px 100px; display: flex; justify-content: center; }
+                .cp-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; }
+
+                /* ─── LISTA FEJLÉC ─── */
+                .cp-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; padding-bottom: 16px; border-bottom: 1px solid ${borderColor}; }
+                .cp-list-title { font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; color: ${mutedColor}; text-transform: uppercase; margin: 0; }
+                .cp-list-badge { font-size: 11px; font-weight: 500; color: ${mutedColor}; border: 1px solid ${borderColor}; padding: 6px 14px; border-radius: 20px; }
+
+                /* ─── KATEGÓRIÁK ─── */
+                .cp-category-group { margin-bottom: 56px; }
+                .cp-category-header { margin-bottom: 24px; padding-left: 8px; }
+                .cp-category-title { font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 400; color: ${textColor}; margin: 0 0 8px 0; letter-spacing: -0.01em; }
+                .cp-category-lead { font-family: 'Inter', sans-serif; font-size: 14px; color: ${mutedColor}; margin: 0; max-width: 600px; line-height: 1.6; }
+
+                /* ─── KÁRTYÁK STÍLUSA ─── */
+                .cp-rows { display: flex; flex-direction: column; gap: 16px; }
+                .cp-row-wrapper { background: #ffffff; border-radius: 12px; border: 1px solid; overflow: hidden; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+                .cp-row-wrapper:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.04); transform: translateY(-1px); }
+                .cp-row-wrapper.is-open { box-shadow: 0 8px 32px rgba(166, 128, 124, 0.08); }
+
+                .cp-row-header { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; background: transparent; border: none; outline: none; cursor: pointer; text-align: left; border-radius: 12px; }
+                .cp-row-header:focus-visible { outline: 2px solid ${accentColor}; outline-offset: -2px; }
+
+                .cp-row-left { display: flex; align-items: flex-start; gap: 24px; flex: 1; }
+                .cp-row-num { font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 600; margin-top: 2px; opacity: 0.8; }
+                .cp-row-title { font-size: 16px; font-weight: 400; line-height: 1.4; max-width: 320px; }
+                .cp-row-right { display: flex; align-items: center; gap: 32px; flex-shrink: 0; }
+                .cp-row-meta { display: flex; align-items: center; font-size: 13px; font-weight: 400; white-space: nowrap; gap: 6px; }
+                .cp-row-price { font-weight: 500; font-family: 'Inter', sans-serif; }
+                
+                .cp-row-trigger { display: flex; align-items: center; gap: 12px; transition: color 0.3s ease; }
+                .cp-row-toggle-text { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+                .cp-row-toggle-icon { width: 32px; height: 32px; border-radius: 50%; border: 1px solid; display: flex; align-items: center; justify-content: center; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+                .cp-row-header:hover .cp-row-toggle-icon { border-color: ${accentColor} !important; color: ${accentColor} !important; }
+
+                .cp-row-body { background: linear-gradient(to bottom, rgba(247, 236, 223, 0.15), transparent); }
+                .cp-row-body-inner { padding: 24px 32px 32px 70px; display: flex; align-items: stretch; gap: 32px; }
+                .cp-row-content { flex: 1; display: flex; flex-direction: column; }
+                
+                .cp-row-image-wrapper { width: 220px; flex-shrink: 0; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; border: 1px solid ${borderColor}; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+                .cp-row-image { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
+                .cp-row-wrapper.is-open:hover .cp-row-image { transform: scale(1.03); }
+
+                .cp-row-desc { font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; max-width: 600px; white-space: pre-line; }
+                .cp-row-action { margin-top: auto; } 
+
+                /* ─── ALSÓ DÍSZÍTŐ ELVÁLASZTÓ ─── */
+                .cp-bottom-divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 64px; opacity: 0.5; }
+                .cp-divider-line { height: 1px; width: 120px; background: ${borderColor}; }
+                .cp-divider-diamond { width: 6px; height: 6px; background: ${accentColor}; transform: rotate(45deg); }
+
+                /* ─── RESZPONSZÍV POPUP / BOTTOM SHEET ─── */
+                .cp-modal-overlay {
+                    position: fixed; inset: 0; background: rgba(28,20,15,0.45); z-index: 9998;
+                    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+                    display: flex; justify-content: center; align-items: center;
+                }
+                .cp-modal-content {
+                    width: 100%; max-width: 720px; height: 85vh; max-height: 800px;
+                    border-radius: 24px; display: flex; flex-direction: column; overflow: hidden;
+                    box-shadow: 0 24px 64px rgba(0,0,0,0.2); position: relative;
+                }
+                .cp-modal-header { flex-shrink: 0; z-index: 2; position: relative; }
+                .cp-modal-drag-handle { display: none; } 
+                .cp-modal-close-btn {
+                    position: absolute; top: 16px; right: 16px; width: 40px; height: 40px;
+                    display: flex; align-items: center; justify-content: center;
+                    background: transparent; border: none; cursor: pointer; border-radius: 50%;
+                    transition: background 0.2s ease;
+                }
+                .cp-modal-close-btn:hover { background: rgba(0,0,0,0.05); }
+                .cp-modal-header-info { padding: 24px 24px 16px; }
+                .cp-modal-iframe-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; background: #ffffff; }
+
+                /* ─── MOBIL NÉZET ─── */
+                @media (max-width: 768px) {
+                    .cp-hero { padding: 80px 20px 60px; }
+                    .cp-list-section { padding: 40px 20px 80px; }
+                    .cp-category-header { padding-left: 0; }
+                    .cp-category-title { font-size: 20px; }
+                    
+                    .cp-row-header { flex-direction: column; align-items: flex-start; padding: 20px; gap: 20px; }
+                    .cp-row-right { width: 100%; justify-content: flex-start; padding-left: 42px; gap: 16px; flex-wrap: wrap; }
+                    .cp-row-toggle-text { display: none; }
+                    .cp-row-trigger { margin-left: auto; }
+                    
+                    .cp-row-body-inner { padding: 20px 20px 24px 20px; flex-direction: column-reverse; gap: 24px; }
+                    .cp-row-image-wrapper { width: 100%; aspect-ratio: 16 / 9; }
+
+                    .cp-modal-overlay { align-items: flex-end; }
+                    .cp-modal-content {
+                        height: 90dvh; max-height: none; max-width: 100%;
+                        border-radius: 24px 24px 0 0;
+                    }
+                    .cp-modal-drag-handle { display: flex; justify-content: center; padding: 16px 0; cursor: grab; }
+                    .cp-modal-header-info { padding: 0 24px 16px; }
+                }
+            `}</style>
+
+            <div className="cp-unified-wrap">
+                <section className="cp-hero">
+                    <div className="cp-hero-inner">
+                        <div className="cp-hero-eyebrow">{heroEyebrow}</div>
+                        <h1 className="cp-hero-title">{heroTitle}</h1>
+                        <p className="cp-hero-desc">{heroDesc}</p>
+                        <div className="cp-hero-scroll">
+                            <span className="cp-hero-scroll-underline">
+                                {heroScrollText.split(" ")[0]}{" "}
+                                {heroScrollText.split(" ")[1]}
+                            </span>
+                            {heroScrollText.split(" ").slice(2).join(" ")} ↓
+                        </div>
+                    </div>
+                </section>
+
+                <section id="behandlungen" className="cp-list-section">
+                    <div className="cp-container">
+                        <div className="cp-list-header">
+                            <h2 className="cp-list-title">Behandlungen</h2>
+                            <div className="cp-list-badge">
+                                {totalTreatments} Angebote
+                            </div>
+                        </div>
+
+                        {visibleCategories.map((category) => (
+                            <div
+                                key={category.id}
+                                className="cp-category-group"
+                            >
+                                <div className="cp-category-header">
+                                    <h3 className="cp-category-title">
+                                        {category.title}
+                                    </h3>
+                                    <p className="cp-category-lead">
+                                        {category.leadText}
+                                    </p>
+                                </div>
+                                <div className="cp-rows">
+                                    {category.items.map(
+                                        (treatment, itemIdx) => (
+                                            <TreatmentRow
+                                                key={`${category.id}-${itemIdx}`}
+                                                treatment={treatment}
+                                                index={itemIdx}
+                                                onBook={(t: any) =>
+                                                    setSelectedTreatment(t)
+                                                }
+                                                accentColor={accentColor}
+                                                bgColor={heroBgColor}
+                                                textColor={textColor}
+                                                mutedColor={mutedColor}
+                                                borderColor={borderColor}
+                                            />
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+
+                        <div className="cp-bottom-divider">
+                            <div className="cp-divider-line"></div>
+                            <div className="cp-divider-diamond"></div>
+                            <div className="cp-divider-line"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <BookingModal
+                    treatment={selectedTreatment}
+                    onClose={() => setSelectedTreatment(null)}
+                    accentColor={accentColor}
+                    bgColor="#ffffff"
+                    textColor={textColor}
+                    mutedColor={mutedColor}
+                />
+            </div>
+        </>
+    )
+}
+
+// ─── FRAMER CONTROLS ─────────────────────────────────────────────────────────
+addPropertyControls(BookingPageUnified, {
+    categoryFilter: {
+        type: ControlType.Enum,
+        title: "Kategória Szűrő",
+        options: [
+            "alle",
+            "klassisch",
+            "medizinisch",
+            "qms",
+            "apparative",
+            "ipl",
+        ],
+        optionTitles: [
+            "Összes (Alle)",
+            "Klassische Kosmetik",
+            "Medizinische Kosmetik",
+            "QMS Medicosmetics",
+            "Spezialbehandlungen",
+            "IPL Behandlungen",
+        ],
+        defaultValue: "alle",
+    },
+    heroEyebrow: {
+        type: ControlType.String,
+        title: "Hero Címke",
+        defaultValue: "ONLINE TERMINBUCHUNG",
+    },
+    heroTitle: {
+        type: ControlType.String,
+        title: "Hero Főcím",
+        defaultValue: "Wählen Sie Ihre Behandlung",
+    },
+    heroDesc: {
+        type: ControlType.String,
+        title: "Hero Leírás",
+        defaultValue:
+            "Buchen Sie Ihren Wunschtermin unkompliziert online. Wählen Sie untenstehend Ihre Behandlung aus, um freie Termine zu sehen.",
+        displayTextArea: true,
+    },
+    heroScrollText: {
+        type: ControlType.String,
+        title: "Görgető Szöveg",
+        defaultValue: "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+    },
+
+    heroBgColor: {
+        type: ControlType.Color,
+        title: "Hero Háttér (Bézs)",
+        defaultValue: "#F7ECDF",
+    },
+    listBgColor: {
+        type: ControlType.Color,
+        title: "Lista Háttér (Fehér)",
+        defaultValue: "#FFFFFF",
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Arculati Szín",
+        defaultValue: "#A6807C",
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg Színe",
+        defaultValue: "#3A3028",
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Halvány Szöveg",
+        defaultValue: "#7A7369",
+    },
+    borderColor: {
+        type: ControlType.Color,
+        title: "Keret Színe",
+        defaultValue: "#EFEBE6",
+    },
+})
