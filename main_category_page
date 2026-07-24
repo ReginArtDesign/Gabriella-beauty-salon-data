@@ -1,0 +1,879 @@
+// @ts-nocheck
+import { addPropertyControls, ControlType } from "framer"
+import { motion } from "framer-motion"
+import * as React from "react"
+
+// ─── SWISS LUXURY DESIGN TOKENS (BRAND GUIDELINES ALAPJÁN) ───────────────────
+const TOKENS = {
+    primary: "#A6807C", //[cite: 1, 3]
+    bg: "#F7ECDF", //[cite: 1, 3]
+    text: "#3A3028", //[cite: 1, 3]
+    muted: "#7A7369", //[cite: 1, 3]
+    border: "#EFEBE6",
+    white: "#FFFFFF",
+    darkCardBg: "#4E4137",
+    darkCardGradient: "linear-gradient(135deg, #4E4137 0%, #362D25 100%)",
+}
+
+const SMOOTH_EASE = [0.16, 1, 0.3, 1]
+const PLACEHOLDER =
+    "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80"
+
+interface CategoryItem {
+    eyebrow: string
+    titleNormal: string
+    titleAccent: string
+    description: string
+    badgeText?: string
+    isHighlighted?: boolean
+    imageUrl: string
+    pageUrl: string
+}
+
+interface HomepageCategoriesProps {
+    bgColor?: string
+    accentColor?: string
+    textColor?: string
+    mutedColor?: string
+    sectionEyebrow?: string
+    sectionTitleNormal?: string
+    sectionTitleAccent?: string
+    sectionSubtitle?: string
+    ctaText?: string
+    ctaLink?: string
+    categories?: CategoryItem[]
+}
+
+const DEFAULT_CATEGORIES: CategoryItem[] = [
+    {
+        eyebrow: "Schönheit & Wellness",
+        titleNormal: "Klassische",
+        titleAccent: "Kosmetik",
+        description:
+            "Traditionelle Gesichtspflege und entspannende Massagen für ein revitalisiertes, strahlendes Hautbild. Tiefenreinigung und Feuchtigkeit auf höchstem Niveau.",
+        imageUrl:
+            "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=800&q=80",
+        pageUrl: "/klassische-kosmetik",
+        isHighlighted: false,
+        badgeText: "",
+    },
+    {
+        eyebrow: "Hauterneuerung",
+        titleNormal: "Medizinische",
+        titleAccent: "Kosmetik",
+        description:
+            "Fortschrittliche dermatologische Treatments wie Microdermabrasion und Needling für tiefenwirksame Regeneration und sichtbare Verjüngung.",
+        imageUrl:
+            "https://images.unsplash.com/photo-1512290900672-1f04e15efad6?auto=format&fit=crop&w=800&q=80",
+        pageUrl: "/medizinische-kosmetik",
+        isHighlighted: false,
+        badgeText: "",
+    },
+    {
+        eyebrow: "Premium Cellular Care",
+        titleNormal: "QMS",
+        titleAccent: "Medicosmetics",
+        description:
+            "Exklusive Systempflege mit hautidentischem, medizinischem Collagen. Erleben Sie die zelluläre Verjüngungstechnologie exklusiv bei uns in Luzern.",
+        imageUrl:
+            "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=1200&q=80",
+        pageUrl: "/qms-medicosmetics",
+        isHighlighted: true,
+        badgeText: "Luzern Exklusiv",
+    },
+    {
+        eyebrow: "Apparative Ästhetik",
+        titleNormal: "Spezial",
+        titleAccent: "behandlungen",
+        description:
+            "Effektives Lifting und Gewebestraffung mittels Radiofrequenz – sichtbare und langanhaltende Ergebnisse ganz ohne Skalpell.",
+        imageUrl:
+            "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=800&q=80",
+        pageUrl: "/spezialbehandlungen",
+        isHighlighted: false,
+        badgeText: "",
+    },
+    {
+        eyebrow: "High-Tech Dermatologie",
+        titleNormal: "Dauerhafte",
+        titleAccent: "Haarentfernung",
+        description:
+            "Seidenglatte Haut ohne Kompromisse. Modernste, schonende IPL-Technologie aufgeteilt in präzise anatomische Zonen für das ganze Körpergefühl.",
+        imageUrl:
+            "https://images.unsplash.com/photo-1560750588-73207b1ef5b8?auto=format&fit=crop&w=1200&q=80",
+        pageUrl: "/haarentfernung-ipl",
+        isHighlighted: true,
+        badgeText: "Dauerhafte Resultate",
+    },
+]
+
+// ─── EGYEDI KÁRTYA KOMPONENS (ÁLLANDÓ SÖTÉT LAYER & SWIPE-UP DRAWER) ─────────
+function CategoryCard({
+    item,
+    index,
+    gridClass,
+    accentColor,
+    handleRedirect,
+}: {
+    item: CategoryItem
+    index: number
+    gridClass: string
+    accentColor: string
+    handleRedirect: (url: string) => void
+}) {
+    const [isExpanded, setIsExpanded] = React.useState(false)
+    const [isMobile, setIsMobile] = React.useState(false)
+    const isFeature = !!item.isHighlighted
+
+    // SSR-biztos felbontás- és érintőkijelző-érzékelés
+    React.useEffect(() => {
+        if (typeof window === "undefined") return
+
+        const mediaQuery = window.matchMedia("(max-width: 768px)")
+        const handleMediaChange = (e: any) => {
+            setIsMobile(e.matches)
+            if (!e.matches) setIsExpanded(false)
+        }
+
+        setIsMobile(mediaQuery.matches || "ontouchstart" in window)
+        mediaQuery.addEventListener("change", handleMediaChange)
+        return () => mediaQuery.removeEventListener("change", handleMediaChange)
+    }, [])
+
+    // Ujjmozdulat (Drag / Swipe-up) érzékelése mobilon[cite: 2, 3]
+    const handleDragEnd = (event: any, info: any) => {
+        if (!isMobile) return
+        if (info.offset.y < -12 || info.velocity.y < -50) {
+            setIsExpanded(true)
+        } else if (info.offset.y > 12 || info.velocity.y > 50) {
+            setIsExpanded(false)
+        }
+    }
+
+    // Kettős nyitási logika: Swipe-up vagy Tap
+    const handleMobileToggle = (e: React.MouseEvent) => {
+        if (!isMobile) return
+        e.stopPropagation()
+        setIsExpanded((prev) => !prev)
+    }
+
+    return (
+        <motion.div
+            className={`cp-card ${gridClass}`}
+            initial={{ opacity: 0, y: 35 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-50px" }}
+            transition={{
+                duration: 0.7,
+                delay: index * 0.1,
+                ease: SMOOTH_EASE,
+            }}
+            onMouseEnter={() => !isMobile && setIsExpanded(true)}
+            onMouseLeave={() => !isMobile && setIsExpanded(false)}
+            onClick={() => {
+                if (isMobile && !isExpanded) setIsExpanded(true)
+            }}
+        >
+            {/* 1. RÉTEG: KÁRTYA HÁTTÉRKÉP */}
+            <div className="cp-card-media-wrap">
+                <img
+                    src={item.imageUrl || PLACEHOLDER}
+                    alt={item.titleNormal}
+                    className="cp-img"
+                    loading="lazy"
+                />
+            </div>
+
+            {/* 2. RÉTEG: ÁLLANDÓ SÖTÉT ÁTTETSZŐ GRADIENT LAYER (MINDIG LÁTSZIK!) */}
+            <div className="cp-permanent-dark-overlay" />
+
+            {/* VIP BADGE (99PX PILL SHAPE)[cite: 3] */}
+            {isFeature && (
+                <motion.div
+                    className="cp-vip-badge-row"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    whileInView={{ scale: 1, opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{
+                        type: "spring",
+                        stiffness: 200,
+                        damping: 16,
+                        delay: 0.25,
+                    }}
+                >
+                    <span className="cp-vip-badge-text">
+                        {item.badgeText || "Luzern Exklusiv"}
+                    </span>
+                </motion.div>
+            )}
+
+            {/* 3. RÉTEG: INTERAKTÍV FELHÚZHATÓ TARTALOMI BLOKK (SWIPE-UP DRAWER)[cite: 2] */}
+            <motion.div
+                className="cp-content-drawer"
+                drag={isMobile ? "y" : false}
+                dragConstraints={{ top: 0, bottom: 0 }}
+                dragElastic={0.12}
+                onDragEnd={handleDragEnd}
+                animate={{
+                    y: isExpanded
+                        ? 0
+                        : isMobile
+                          ? "calc(100% - 88px)"
+                          : "calc(100% - 94px)",
+                }}
+                transition={{
+                    type: "spring",
+                    stiffness: 280,
+                    damping: 28,
+                    mass: 0.8,
+                }}
+            >
+                {/* MOBIL VÍZSZINTES DRAGGABLE FOGANTYÚ[cite: 2] */}
+                <div
+                    className="cp-drag-handle-bar"
+                    onClick={handleMobileToggle}
+                >
+                    <div className="cp-drag-indicator" />
+                </div>
+
+                <div className="cp-drawer-inner">
+                    {/* FEJLÉC - SZIGORÚ VILÁGOS BÉZS (#F7ECDF) & FEHÉR (#FFFFFF)[cite: 1, 3] */}
+                    <div
+                        className="cp-drawer-header"
+                        onClick={handleMobileToggle}
+                    >
+                        <div className="cp-card-eyebrow">{item.eyebrow}</div>
+                        <h3 className="cp-card-title">
+                            {item.titleNormal}{" "}
+                            <span className="accent-text">
+                                {item.titleAccent}
+                            </span>
+                        </h3>
+                    </div>
+
+                    {/* KIBONTÓDÓ LEÍRÁS ÉS AKCIÓ GOMB */}
+                    <div className="cp-drawer-body">
+                        <p className="cp-card-desc">{item.description}</p>
+
+                        <div className="cp-card-footer">
+                            <span
+                                className="cp-explore-text"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRedirect(item.pageUrl)
+                                }}
+                            >
+                                Behandlung entdecken
+                            </span>
+                            <div
+                                className="cp-action-btn"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRedirect(item.pageUrl)
+                                }}
+                            >
+                                <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 14 14"
+                                    fill="none"
+                                >
+                                    <path
+                                        d="M5 9L9 5M9 5H5.5M9 5V8.5"
+                                        stroke="currentColor"
+                                        strokeWidth="1.6"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+        </motion.div>
+    )
+}
+
+// ─── FŐ INTERAKTÍV KOMPONENS ─────────────────────────────────────────────────
+export default function HomepageCategories({
+    bgColor = TOKENS.white,
+    accentColor = TOKENS.primary,
+    textColor = TOKENS.text,
+    mutedColor = TOKENS.muted,
+    sectionEyebrow = "Unsere Kompetenzen",
+    sectionTitleNormal = "Wählen Sie Ihre",
+    sectionTitleAccent = "Behandlungswelt",
+    sectionSubtitle = "Entdecken Sie unsere massgeschneiderten Behandlungswelten für Ihre zeitlose Schönheit und Ihr absolut entspanntes Wohlbefinden.",
+    ctaText = "Alle Behandlungen ansehen",
+    ctaLink = "/behandlungen",
+    categories = DEFAULT_CATEGORIES,
+}: HomepageCategoriesProps) {
+    const handleRedirect = (url: string) => {
+        if (typeof window !== "undefined" && url) {
+            window.location.href = url
+        }
+    }
+
+    // Intelligens aszimmetrikus rács-kiszámító algoritmus
+    const normalItems = categories.filter((c) => !c.isHighlighted)
+    const getGridClass = (cat: CategoryItem) => {
+        if (cat.isHighlighted) return "cp-col-12 is-feature"
+        const normalIdx = normalItems.indexOf(cat)
+        if (normalIdx === normalItems.length - 1 && normalIdx % 2 === 0) {
+            return "cp-col-12"
+        }
+        const isEvenRow = Math.floor(normalIdx / 2) % 2 === 0
+        if (isEvenRow) {
+            return normalIdx % 2 === 0 ? "cp-col-7" : "cp-col-5"
+        } else {
+            return normalIdx % 2 === 0 ? "cp-col-5" : "cp-col-7"
+        }
+    }
+
+    return (
+        <>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap'); //[cite: 1, 3]
+
+                .cp-editorial-wrap {
+                    width: 100%;
+                    background: ${bgColor};
+                    padding: 120px 40px;
+                    box-sizing: border-box;
+                    font-family: 'Inter', sans-serif; //[cite: 1, 3]
+                    color: ${mutedColor};
+                    -webkit-font-smoothing: antialiased;
+                }
+
+                .cp-editorial-container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                /* ── SZEKCIÓ FEJLÉC ── */
+                .cp-section-header {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    margin-bottom: 80px;
+                    max-width: 700px;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+
+                .cp-eyebrow {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.22em;
+                    text-transform: uppercase;
+                    color: ${accentColor};
+                    margin-bottom: 16px;
+                    display: block;
+                }
+
+                .cp-title {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-weight: 300;
+                    font-size: clamp(34px, 4.5vw, 48px);
+                    line-height: 1.15;
+                    color: ${textColor};
+                    margin: 0 0 20px 0;
+                    letter-spacing: -0.02em;
+                }
+                .cp-title .accent {
+                    color: ${accentColor};
+                    font-weight: 400;
+                }
+
+                .cp-subtitle {
+                    font-size: 16.5px;
+                    line-height: 1.7;
+                    color: ${mutedColor};
+                    margin: 0;
+                }
+
+                /* ── BENTO MOSAIC GRID ── */
+                .cp-grid {
+                    display: grid;
+                    grid-template-columns: repeat(12, 1fr);
+                    gap: 36px;
+                    width: 100%;
+                }
+
+                .cp-col-5  { grid-column: span 5; }
+                .cp-col-6  { grid-column: span 6; }
+                .cp-col-7  { grid-column: span 7; }
+                .cp-col-12 { grid-column: span 12; }
+
+                /* ── KÁRTYA ALAPSTÍLUSOK (6PX RADIUS) ── */
+                .cp-card {
+                    background: ${TOKENS.darkCardBg}; //[cite: 1]
+                    border-radius: 6px;
+                    border: 1px solid ${TOKENS.border};
+                    overflow: hidden;
+                    cursor: pointer;
+                    display: flex;
+                    flex-direction: column;
+                    position: relative;
+                    height: 380px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+                    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+                    user-select: none;
+                    -webkit-user-select: none;
+                }
+
+                .cp-card:hover {
+                    border-color: ${accentColor};
+                    box-shadow: 0 16px 36px rgba(58, 48, 40, 0.16);
+                }
+
+                .cp-card.is-feature {
+                    height: 460px;
+                    border: 1px solid rgba(247, 236, 223, 0.25);
+                }
+
+                /* ── 1. RÉTEG: KÁRTYA HÁTTÉRKÉP ── */
+                .cp-card-media-wrap {
+                    position: absolute;
+                    inset: 0;
+                    width: 100%;
+                    height: 100%;
+                    overflow: hidden;
+                    z-index: 1;
+                }
+
+                .cp-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                    transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+                .cp-card:hover .cp-img {
+                    transform: scale(1.06); //[cite: 3]
+                }
+
+                /* ── 2. RÉTEG: ÁLLANDÓ SÖTÉT ÁTTETSZŐ MASZK (MINDIG LÁTSZIK!) ── */
+                .cp-permanent-dark-overlay {
+                    position: absolute;
+                    inset: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(180deg, rgba(58, 48, 40, 0.15) 0%, rgba(58, 48, 40, 0.88) 100%);
+                    z-index: 2;
+                    pointer-events: none;
+                    transition: background 0.4s ease;
+                }
+                .cp-card:hover .cp-permanent-dark-overlay {
+                    background: linear-gradient(180deg, rgba(58, 48, 40, 0.2) 0%, rgba(58, 48, 40, 0.94) 100%);
+                }
+
+                /* ── VIP BADGE (DESIGN SYSTEM: 99PX PILL SHAPE)[cite: 3] ── */
+                .cp-vip-badge-row {
+                    position: absolute;
+                    top: 24px;
+                    right: 24px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: rgba(247, 236, 223, 0.18);
+                    padding: 6px 16px;
+                    border-radius: 99px; //[cite: 3]
+                    border: 1px solid rgba(247, 236, 223, 0.4);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    white-space: nowrap;
+                    z-index: 10;
+                }
+
+                .cp-vip-badge-text {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-size: 9.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.18em;
+                    text-transform: uppercase;
+                    color: ${TOKENS.white};
+                }
+
+                /* ── 3. RÉTEG: FELHÚZHATÓ TARTALOMI BLOKK (SWIPE-UP DRAWER)[cite: 2] ── */
+                .cp-content-drawer {
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    z-index: 5;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                    touch-action: pan-y;
+                }
+
+                /* VÍZSZINTES DRAGGABLE FOGANTYÚ MOBILON[cite: 2] */
+                .cp-drag-handle-bar {
+                    width: 100%;
+                    padding: 12px 0 6px 0;
+                    display: none;
+                    justify-content: center;
+                    align-items: center;
+                    cursor: grab;
+                }
+
+                .cp-drag-indicator {
+                    width: 38px;
+                    height: 4px;
+                    border-radius: 99px; //[cite: 3]
+                    background: rgba(247, 236, 223, 0.55);
+                    transition: background 0.3s ease, transform 0.2s ease;
+                }
+                .cp-content-drawer:active .cp-drag-indicator {
+                    background: rgba(247, 236, 223, 0.95);
+                    transform: scaleX(1.15);
+                }
+
+                .cp-drawer-inner {
+                    padding: 18px 32px 32px 32px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                }
+
+                /* FEJLÉC - VILÁGOS BÉZS (#F7ECDF) & TISZTA FEHÉR (#FFFFFF)[cite: 1, 3] */
+                .cp-drawer-header {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    cursor: pointer;
+                }
+
+                .cp-card-eyebrow {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.2em;
+                    text-transform: uppercase;
+                    color: ${TOKENS.bg} !important; // Hivatalos világos bézs[cite: 1, 3]
+                    opacity: 0.95;
+                }
+
+                .cp-card-title {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-size: 24px;
+                    font-weight: 300;
+                    color: ${TOKENS.white} !important; // Ragyogó tiszta fehér
+                    margin: 0;
+                    line-height: 1.25;
+                }
+                .cp-card.is-feature .cp-card-title {
+                    font-size: 30px;
+                }
+                
+                .cp-card-title .accent-text {
+                    color: ${TOKENS.bg} !important; // Világos bézs kiemelt szavak[cite: 1, 3]
+                    font-weight: 400;
+                }
+
+                /* LEÍRÁS ÉS GOMBOK */
+                .cp-drawer-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 20px;
+                }
+
+                .cp-card-desc {
+                    font-size: 14.5px;
+                    line-height: 1.65;
+                    color: #E2DBD5 !important;
+                    margin: 0;
+                }
+
+                /* INTERAKTÍV ACTION FOOTER */
+                .cp-card-footer {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding-top: 16px;
+                    border-top: 1px solid rgba(247, 236, 223, 0.18);
+                }
+
+                .cp-explore-text {
+                    font-family: 'Montserrat', sans-serif; //[cite: 1, 3]
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.16em;
+                    text-transform: uppercase;
+                    color: ${TOKENS.white};
+                    transition: color 0.3s ease;
+                }
+                .cp-card:hover .cp-explore-text {
+                    color: ${TOKENS.bg};
+                }
+
+                /* AKCIÓ GOMB: BRAND GUIDELINES 4PX RADIUS & SHADOW[cite: 3] */
+                .cp-action-btn {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 4px; //[cite: 3]
+                    background: rgba(247, 236, 223, 0.15);
+                    color: ${TOKENS.white};
+                    border: 1px solid rgba(247, 236, 223, 0.35);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+
+                .cp-card:hover .cp-action-btn {
+                    background: ${TOKENS.bg}; //[cite: 1, 3]
+                    color: ${TOKENS.text}; //[cite: 1, 3]
+                    border-color: ${TOKENS.bg};
+                    transform: scale(1.05); //[cite: 3]
+                }
+
+                /* ── GLOBÁLIS CTA GOMB ── */
+                .cp-global-cta-wrap {
+                    display: flex;
+                    justify-content: center;
+                    margin-top: 72px;
+                    width: 100%;
+                }
+
+                /* ── RESZPONSZÍV TÖRÉSPONTOK ── */
+                @media (max-width: 1024px) {
+                    .cp-editorial-wrap { padding: 90px 32px; }
+                    .cp-col-7, .cp-col-5 { grid-column: span 6; }
+                }
+
+                @media (max-width: 768px) {
+                    .cp-editorial-wrap { padding: 60px 20px; }
+                    
+                    .cp-section-header { 
+                        align-items: flex-start; 
+                        text-align: left; 
+                        margin-bottom: 40px;
+                        max-width: 100%;
+                    }
+                    .cp-title { font-size: 30px; }
+                    .cp-subtitle { font-size: 15px; }
+                    
+                    .cp-grid { grid-template-columns: 1fr; gap: 24px; }
+                    .cp-col-5, .cp-col-6, .cp-col-7, .cp-col-12 { grid-column: span 12; }
+                    
+                    .cp-card { height: 360px; }
+                    .cp-card.is-feature { height: 420px; }
+                    
+                    /* Mobilon kötelezően megjelenítjük a vízszintes fogantyút[cite: 2] */
+                    .cp-drag-handle-bar { display: flex !important; }
+                    
+                    .cp-drawer-inner { padding: 4px 24px 24px 24px; gap: 14px; }
+                    .cp-card-title, .cp-card.is-feature .cp-card-title { font-size: 22px; }
+                    .cp-card-desc { font-size: 14px; }
+                    
+                    .cp-vip-badge-row { top: 16px; right: 16px; padding: 5px 12px; }
+                    .cp-vip-badge-text { font-size: 8.5px; }
+
+                    .cp-global-cta-wrap { margin-top: 48px; }
+                    .cp-mobile-cta {
+                        width: 100%;
+                        justify-content: center;
+                        padding: 16px 24px !important;
+                        font-size: 11px !important;
+                        letter-spacing: 0.14em !important;
+                        box-sizing: border-box;
+                    }
+                }
+            `}</style>
+
+            <div className="cp-editorial-wrap">
+                <section className="cp-editorial-container">
+                    {/* SZEKCIÓ FEJLÉC */}
+                    <motion.div
+                        className="cp-section-header"
+                        initial={{ opacity: 0, y: 25 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, margin: "-50px" }}
+                        transition={{ duration: 0.7, ease: SMOOTH_EASE }}
+                    >
+                        <span className="cp-eyebrow">{sectionEyebrow}</span>
+                        <h2 className="cp-title">
+                            {sectionTitleNormal}{" "}
+                            <span className="accent">{sectionTitleAccent}</span>
+                        </h2>
+                        <p className="cp-subtitle">{sectionSubtitle}</p>
+                    </motion.div>
+
+                    {/* ASZIMMETRIKUS BENTO MOSAIC KÁRTYÁK SWIPE-UP DRAWERREL[cite: 2, 3] */}
+                    <div className="cp-grid">
+                        {categories.map((cat, index) => (
+                            <CategoryCard
+                                key={index}
+                                item={cat}
+                                index={index}
+                                gridClass={getGridClass(cat)}
+                                accentColor={accentColor}
+                                handleRedirect={handleRedirect}
+                            />
+                        ))}
+                    </div>
+
+                    {/* GLOBÁLIS CTA GOMB */}
+                    <motion.div
+                        className="cp-global-cta-wrap"
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{
+                            duration: 0.6,
+                            delay: 0.35,
+                            ease: SMOOTH_EASE,
+                        }}
+                    >
+                        <motion.a
+                            href={ctaLink}
+                            className="cp-mobile-cta"
+                            whileHover={{
+                                y: -2,
+                                boxShadow:
+                                    "0 8px 24px rgba(166, 128, 124, 0.25)", //[cite: 3]
+                                filter: "brightness(1.04)",
+                            }}
+                            whileTap={{ scale: 0.98 }}
+                            transition={{ duration: 0.3, ease: SMOOTH_EASE }}
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 10,
+                                padding: "16px 36px",
+                                background: accentColor,
+                                color: "#FFFFFF",
+                                fontFamily: "'Montserrat', sans-serif", //[cite: 1, 3]
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                letterSpacing: "0.16em",
+                                textTransform: "uppercase",
+                                textDecoration: "none",
+                                borderRadius: "4px", // Brand Guidelines: 4px[cite: 3]
+                                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)", // Hivatalos árnyék[cite: 3]
+                                cursor: "pointer",
+                            }}
+                        >
+                            <span>{ctaText}</span>
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 14 14"
+                                fill="none"
+                                style={{ flexShrink: 0 }}
+                            >
+                                <path
+                                    d="M2 7h10M8.5 3.5L12 7l-3.5 3.5"
+                                    stroke="currentColor"
+                                    strokeWidth="1.4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                            </svg>
+                        </motion.a>
+                    </motion.div>
+                </section>
+            </div>
+        </>
+    )
+}
+
+HomepageCategories.defaultProps = {
+    width: 1440,
+    height: 1100,
+}
+
+addPropertyControls(HomepageCategories, {
+    categories: {
+        type: ControlType.Array,
+        title: "Kezelések / Kártyák",
+        control: {
+            type: ControlType.Object,
+            controls: {
+                imageUrl: { type: ControlType.Image, title: "Kép feltöltése" },
+                eyebrow: { type: ControlType.String, title: "Felső kis cím" },
+                titleNormal: {
+                    type: ControlType.String,
+                    title: "Főcím (Fehér rész)",
+                },
+                titleAccent: {
+                    type: ControlType.String,
+                    title: "Főcím (Bézs kiemelt rész)",
+                },
+                description: {
+                    type: ControlType.String,
+                    title: "Leírás",
+                    displayTextArea: true,
+                },
+                pageUrl: {
+                    type: ControlType.String,
+                    title: "Link útvonal (pl. /qms)",
+                },
+                badgeText: {
+                    type: ControlType.String,
+                    title: "Jelvény (üres = nincs)",
+                },
+                isHighlighted: {
+                    type: ControlType.Boolean,
+                    title: "VIP Panoráma Kártya",
+                },
+            },
+        },
+        defaultValue: DEFAULT_CATEGORIES,
+    },
+    sectionEyebrow: {
+        type: ControlType.String,
+        title: "Szekció Kis Cím",
+        defaultValue: "Unsere Kompetenzen",
+    },
+    sectionTitleNormal: {
+        type: ControlType.String,
+        title: "Főcím Első Rész",
+        defaultValue: "Wählen Sie Ihre",
+    },
+    sectionTitleAccent: {
+        type: ControlType.String,
+        title: "Főcím Színes Rész",
+        defaultValue: "Behandlungswelt",
+    },
+    sectionSubtitle: {
+        type: ControlType.String,
+        title: "Bevezető Szöveg",
+        defaultValue:
+            "Entdecken Sie unsere massgeschneiderten Behandlungswelten für Ihre zeitlose Schönheit und Ihr absolut entspanntes Wohlbefinden.",
+        displayTextArea: true,
+    },
+    ctaText: {
+        type: ControlType.String,
+        title: "Alsó CTA Szöveg",
+        defaultValue: "Alle Behandlungen ansehen",
+    },
+    ctaLink: { type: ControlType.Link, title: "Alsó CTA Link" },
+    bgColor: {
+        type: ControlType.Color,
+        title: "Háttér Szín",
+        defaultValue: "#FFFFFF",
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Arculati Szín",
+        defaultValue: TOKENS.primary, //[cite: 1, 3]
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg Szín",
+        defaultValue: TOKENS.text, //[cite: 1, 3]
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Halvány Szöveg",
+        defaultValue: TOKENS.muted, //[cite: 1, 3]
+    },
+})
