@@ -1,29 +1,32 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from "react"
+import * as React from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { addPropertyControls, ControlType } from "framer"
 import { motion, AnimatePresence } from "framer-motion"
 
 // ─── TÍPUSOK ─────────────────────────────────────────────────────────────────
-interface TreatmentSubItem {
+interface RawTreatmentPayload {
+    category: string
     name: string
     duration?: string
     price: string
-    description: string
-    calHref: string
+    priceAbo?: string
+    badge?: string
+    teaser?: string
+    bullet1?: string
+    bullet2?: string
+    bullet3?: string
+    bullet4?: string
+    longDescription?: string
+    bookingUrl: string
     imageUrl?: string
-    zone?: "gesicht" | "koerper" | "arme_beine" | "intim" // ÚJ: Testrész kategória
-}
-
-interface GeneralTreatment {
-    id: string
-    category: string
-    categoryLabel: string
-    title: string
-    leadText: string
-    items: TreatmentSubItem[]
+    zone?: string
 }
 
 interface BookingPageProps {
+    dataSourceSelector?: string
+    categoriesOrder?: string
+    categoryDescriptions?: string
     heroEyebrow?: string
     heroTitle?: string
     heroDesc?: string
@@ -34,11 +37,11 @@ interface BookingPageProps {
     textColor?: string
     mutedColor?: string
     borderColor?: string
-    categoryFilter?: string
     searchPlaceholder?: string
+    disclaimerText?: string
 }
 
-// ─── CUSTOM HOOK A RESZPONSZÍV VISELKEDÉSHEZ ─────────────────────────────────
+// ─── CUSTOM HOOK ─────────────────────────────────────────────────────────────
 function useMediaQuery(query: string) {
     const [matches, setMatches] = useState(false)
     useEffect(() => {
@@ -49,6 +52,22 @@ function useMediaQuery(query: string) {
         return () => media.removeEventListener("change", listener)
     }, [matches, query])
     return matches
+}
+
+function slugify(str: string) {
+    return (str || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")
+}
+
+function extractPriceNumber(priceStr: string): number {
+    if (!priceStr) return Number.MAX_SAFE_INTEGER
+    const match = priceStr.replace(/'/g, "").match(/\d+([.,]\d+)?/)
+    if (!match) return Number.MAX_SAFE_INTEGER
+    return parseFloat(match[0].replace(",", "."))
 }
 
 // ─── IKONOK ──────────────────────────────────────────────────────────────────
@@ -78,7 +97,6 @@ function IconSearch({ size = 18 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconFilter({ size = 18 }: { size?: number }) {
     return (
         <svg
@@ -98,7 +116,6 @@ function IconFilter({ size = 18 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconClock({ size = 14 }: { size?: number }) {
     return (
         <svg
@@ -126,7 +143,6 @@ function IconClock({ size = 14 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconTag({ size = 14 }: { size?: number }) {
     return (
         <svg
@@ -155,7 +171,6 @@ function IconTag({ size = 14 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconChevronDown({ size = 14 }: { size?: number }) {
     return (
         <svg
@@ -175,7 +190,6 @@ function IconChevronDown({ size = 14 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconChevronRight({ size = 12 }: { size?: number }) {
     return (
         <svg
@@ -196,7 +210,6 @@ function IconChevronRight({ size = 12 }: { size?: number }) {
         </svg>
     )
 }
-
 function IconClose({ size = 18 }: { size?: number }) {
     return (
         <svg
@@ -216,447 +229,89 @@ function IconClose({ size = 18 }: { size?: number }) {
         </svg>
     )
 }
+function IconCheck({ size = 13 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+            style={{ flexShrink: 0, marginTop: 2 }}
+        >
+            <path
+                d="M4 12.5L9 17.5L20 6.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+function IconArrowUp({ size = 13 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M12 19V5M5 12l7-7 7 7"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+function IconArrowDown({ size = 13 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+        >
+            <path
+                d="M12 5v14M5 12l7 7 7-7"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
 
 const SMOOTH_EASE = [0.16, 1, 0.3, 1]
-const PLACEHOLDER_IMAGE = "https://i.imgur.com/NfeqbqS.png"
-const SCHULTER_IMAGE =
-    "https://framerusercontent.com/images/oYVb9w6e6MrqNh41nR5E1E7Ck0.png"
-
-// ─── SZŰRŐ OPCIÓK ADATBÁZISA ──────────────────────────────────────────────────
-const CATEGORY_OPTIONS = [
-    { id: "alle", label: "Alle Kategorien" },
-    { id: "klassisch", label: "Klassische Kosmetik" },
-    { id: "medizinisch", label: "Medizinische Kosmetik" },
-    { id: "qms", label: "QMS Medicosmetics" },
-    { id: "apparative", label: "Apparative Ästhetik" },
-    { id: "ipl", label: "IPL Haarentfernung" },
-]
-
-const ZONE_OPTIONS = [
-    { id: "alle", label: "Alle Körperzonen" },
-    { id: "gesicht", label: "Gesicht & Hals" },
-    { id: "koerper", label: "Körper & Rücken" },
-    { id: "arme_beine", label: "Arme & Beine" },
-    { id: "intim", label: "Bikini & Intim" },
-]
-
-// ─── TELJES, HIÁNYTALAN KEZELÉS ADATBÁZIS (ZONE METAADATOKKAL) ─────────────────
-const CATEGORIZED_TREATMENTS: GeneralTreatment[] = [
-    {
-        id: "klassische-kosmetik",
-        category: "klassisch",
-        categoryLabel: "Klassische Kosmetik",
-        title: "Klassische Gesichtsbehandlungen",
-        leadText:
-            "Traditionelle Gesichtspflege und entspannende Massagen für ein revitalisiertes, strahlendes Hautbild.",
-        items: [
-            {
-                name: "Klassische Gesichtsbehandlung",
-                duration: "90 Min",
-                price: "165 CHF",
-                description:
-                    "Ein Einzeltermin zur umfassenden Gesichtsbehandlung, abgestimmt auf Ihren Hauttyp.",
-                calHref:
-                    "https://gabriellasbeautysalon.trafft.com/booking?t=s&uuid=7a04cfda-4063-4aae-9b82-852712a2d1d1",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Bellabaci Gesichtsmassage",
-                duration: "30 Min",
-                price: "ab 60 CHF",
-                description:
-                    "Exklusive Gesichtsmassage zur Tiefenentspannung. Nur während einer Gesichtsbehandlung buchbar.",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/bellabaci-gesichtsmassage",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-        ],
-    },
-    {
-        id: "medizinische-kosmetik",
-        category: "medizinisch",
-        categoryLabel: "Medizinische Kosmetik",
-        title: "Apparative & Medizinische Kosmetik",
-        leadText:
-            "Fortschrittliche dermatologische Treatments für tiefenwirksame Regeneration und sichtbare Hauterneuerung.",
-        items: [
-            {
-                name: "Gesichtsbehandlung mit Microdermabrasion (Einzel)",
-                price: "165 CHF",
-                description:
-                    "Sanftes mechanisches Peeling zur Verfeinerung des Hautbildes.",
-                calHref:
-                    "https://gabriellasbeautysalon.trafft.com/booking?t=s&uuid=7e6ca2d0-ddc5-43c0-af8c-b013584b69cb",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Gesichtsbehandlung mit Microdermabrasion (3er Abo)",
-                price: "419 CHF",
-                description:
-                    "3 Behandlungen für langanhaltende Resultate. (Sie sparen 76 CHF im Vergleich zur Einzelbuchung)",
-                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Gesichtsbehandlung mit Microdermabrasion (5er Abo)",
-                price: "655 CHF",
-                description:
-                    "5 intensive Kuren für maximale Hauterneuerung. (Sie sparen 170 CHF im Vergleich zur Einzelbuchung)",
-                calHref: "https://cal.eu/gabriellasbeauty/microdermabrasion",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Gesichtsbehandlung mit Needling (Einzel)",
-                price: "180 CHF",
-                description:
-                    "Minimal-invasives Treatment zur Kollagenstimulation.",
-                calHref: "https://cal.eu/gabriellasbeauty/needling",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Gesichtsbehandlung mit Needling (3er Abo)",
-                price: "490 CHF",
-                description:
-                    "3 intensive Needling-Sitzungen. (Sie sparen 50 CHF im Vergleich zur Einzelbuchung)",
-                calHref: "https://cal.eu/gabriellasbeauty/needling",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Gesichtsbehandlung mit Needling (5er Abo)",
-                price: "780 CHF",
-                description:
-                    "5 Kuren für maximale Faltenglättung. (Sie sparen 120 CHF im Vergleich zur Einzelbuchung)",
-                calHref: "https://cal.eu/gabriellasbeauty/needling",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-        ],
-    },
-    {
-        id: "green-peel",
-        category: "medizinisch",
-        categoryLabel: "Medizinische Kosmetik",
-        title: "Green Peel Kräuterschälkur",
-        leadText:
-            "Die originale, weltbekannte Methode zur natürlichen Hauterneuerung auf rein pflanzlicher Basis.",
-        items: [
-            {
-                name: "Green Peel Fresh Up",
-                price: "180 CHF",
-                description:
-                    "Der Frischekick ohne Schälung. Ideal für Pigmentstörungen und müde Haut.",
-                calHref: "https://cal.eu/gabriellasbeauty/green-peel-fresh-up",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Green Peel Energy",
-                price: "250 CHF",
-                description:
-                    "Intensiver Vitalitätsschub für reifere, anspruchsvolle Hautbilder.",
-                calHref: "https://cal.eu/gabriellasbeauty/green-peel-energy",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Green Peel Klassik",
-                price: "580 CHF",
-                description:
-                    "Die klassische Erneuerungskur. Sichtbare Hautschälung und komplette Regeneration in wenigen Tagen.",
-                calHref: "https://cal.eu/gabriellasbeauty/green-peel-klassik",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-        ],
-    },
-    {
-        id: "qms-medicosmetics",
-        category: "qms",
-        categoryLabel: "QMS Medicosmetics",
-        title: "QMS Systempflege treatments",
-        leadText:
-            "Exklusive zelluläre Verjüngungstechnologie mit medizinischem Collagen. Neu und einmalig in Luzern!",
-        items: [
-            {
-                name: "QMS CLASSIC",
-                duration: "90 Min",
-                price: "225 CHF",
-                description:
-                    "Hautidentische Kollagene für sofort sichtbare Straffung und intensive Hydratation.",
-                calHref: "https://cal.eu/gabriellasbeauty/qms-classic",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "QMS SK Alpha Revital",
-                duration: "120 Min",
-                price: "255 CHF",
-                description:
-                    "Thermo-aktive Revitalisierung zur Entgiftung und Festigung der Gesichtskonturen.",
-                calHref: "https://cal.eu/gabriellasbeauty/qms-sk-alpha-revital",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "QMS OXYGEN",
-                duration: "120 Min",
-                price: "285 CHF",
-                description:
-                    "Hochkonzentrierte Sauerstoff-Behandlung für ultimative Zellregeneration.",
-                calHref: "https://cal.eu/gabriellasbeauty/qms-oxygen",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-        ],
-    },
-    {
-        id: "apparative-spezial",
-        category: "apparative",
-        categoryLabel: "Spezialbehandlungen",
-        title: "Apparative Ästhetik & Anti-Aging",
-        leadText:
-            "Sichtbares Lifting und Gewebestraffung mit modernster Medizintechnik – ganz ohne Skalpell.",
-        items: [
-            {
-                name: "IPL Anti-Aging Behandlung (Pro Sitzung)",
-                price: "200 CHF",
-                description:
-                    "Lichtbasierte Hautverjüngung zur Reduktion von Fältchen und Altersflecken.",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/https-cal.eu-gabriellasbeauty-ipl-anti-aging",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Radiofrequenzbehandlung (Einzel)",
-                price: "225 CHF",
-                description:
-                    "Tiefenwirksame Radiofrequenzströme zur sofortigen Straffung des Bindegewebes.",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Radiofrequenzbehandlung (3er Abo)",
-                price: "450 CHF",
-                description:
-                    "3 Behandlungen für ein langanhaltendes Ergebnis. (Sie sparen 225 CHF – 1 Behandlung gratis!)",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "Radiofrequenzbehandlung (6er Abo)",
-                price: "750 CHF",
-                description:
-                    "Der ultimative Lifting-Zyklus. (Sie sparen massive 600 CHF im Vergleich zur Einzelbuchung!)",
-                calHref:
-                    "https://cal.eu/gabriellasbeauty/radiofrequenzbehandlung",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-        ],
-    },
-    {
-        id: "ipl-behandlungen",
-        category: "ipl",
-        categoryLabel: "IPL Behandlungen",
-        title: "IPL Dauerhafte Haarentfernung",
-        leadText:
-            "Sichere und effektive IPL-Technologie für langanhaltend glatte Haut und ein verjüngtes, ebenmäßiges Hautbild. Buchen Sie Ihren Einzeltermin, Bérletek sind direkt im Studio oder nach der ersten Behandlung buchbar.",
-        items: [
-            {
-                name: "IPL Achseln",
-                price: "ab 160 CHF",
-                description:
-                    "Dauerhaft glatte Achseln durch moderne IPL-Technik.\n\nPreise:\n• Einzelbehandlung: 160 CHF\n• 3er Abo: 450 CHF\n• 6er Abo: 860 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-achseln",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Bikini",
-                price: "ab 260 CHF",
-                description:
-                    "Perfekt gepflegte Bikinizone mit Langzeiteffekt.\n\nPreise:\n• Einzelbehandlung: 260 CHF\n• 3er Abo: 730 CHF\n• 6er Abo: 1390 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "intim",
-            },
-            {
-                name: "IPL Bikini & Intim",
-                price: "ab 460 CHF",
-                description:
-                    "Maximale Glätte für empfindliche Bereiche.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-bikini-intim",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "intim",
-            },
-            {
-                name: "IPL Oberlippe",
-                price: "ab 80 CHF",
-                description:
-                    "Sanfte Haarentfernung für ein klares Gesichtsbild.\n\nPreise:\n• Einzelbehandlung: 80 CHF\n• 3er Abo: 230 CHF\n• 6er Abo: 440 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberlippe",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "IPL Kinn",
-                price: "ab 160 CHF",
-                description:
-                    "Präzise Haarentfernung für ein gepflegtes Kinn.\n\nPreise:\n• Einzelbehandlung: 160 CHF\n• 3er Abo: 450 CHF\n• 6er Abo: 860 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-kinn",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "gesicht",
-            },
-            {
-                name: "IPL Nacken",
-                price: "ab 130 CHF",
-                description:
-                    "Klare Konturen durch dauerhafte Haarentfernung.\n\nPreise:\n• Einzelbehandlung: 130 CHF\n• 3er Abo: 370 CHF\n• 6er Abo: 710 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-nacken",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Unterschenkel",
-                price: "ab 460 CHF",
-                description:
-                    "Seidig glatte Unterschenkel für jeden Tag.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterschenkel",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Oberschenkel",
-                price: "ab 590 CHF",
-                description:
-                    "Effektive Entfernung unerwünschter Haare am Oberschenkel.\n\nPreise:\n• Einzelbehandlung: 590 CHF\n• 3er Abo: 1660 CHF\n• 6er Abo: 3160 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberschenkel",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Ganze Beine",
-                price: "ab 910 CHF",
-                description:
-                    "Das komplette Wohlfühlpaket für Ihre Beine.\n\nPreise:\n• Einzelbehandlung: 910 CHF\n• 3er Abo: 2550 CHF\n• 6er Abo: 4850 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-beine",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Schulter",
-                price: "ab 390 CHF",
-                description:
-                    "Ästhetische Ergebnisse für den Schulterbereich.\n\nPreise:\n• Einzelbehandlung: 390 CHF\n• 3er Abo: 1100 CHF\n• 6er Abo: 2090 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-schulter",
-                imageUrl: SCHULTER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Ganzer Rücken",
-                price: "ab 850 CHF",
-                description:
-                    "Dauerhafte Befreiung von Haaren am gesamten Rücken.\n\nPreise:\n• Einzelbehandlung: 850 CHF\n• 3er Abo: 2380 CHF\n• 6er Abo: 4530 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganzer-ruecken",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Bauch",
-                price: "ab 460 CHF",
-                description:
-                    "Sanfte Behandlung für einen glatten Bauchbereich.\n\nPreise:\n• Einzelbehandlung: 460 CHF\n• 3er Abo: 1290 CHF\n• 6er Abo: 2460 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-bauch",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Brust",
-                price: "ab 390 CHF",
-                description:
-                    "Gründliche Haarentfernung für den Brustbereich.\n\nPreise:\n• Einzelbehandlung: 390 CHF\n• 3er Abo: 1100 CHF\n• 6er Abo: 2090 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-brust",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "koerper",
-            },
-            {
-                name: "IPL Ganze Arme",
-                price: "ab 590 CHF",
-                description:
-                    "Rundum glatte Haut an beiden Armen.\n\nPreise:\n• Einzelbehandlung: 590 CHF\n• 3er Abo: 1660 CHF\n• 6er Abo: 3160 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-ganze-arme",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Unterarme",
-                price: "ab 330 CHF",
-                description:
-                    "Perfekte Ergebnisse für die Unterarme.\n\nPreise:\n• Einzelbehandlung: 330 CHF\n• 3er Abo: 930 CHF\n• 6er Abo: 1770 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-unterarme",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Oberarme",
-                price: "ab 330 CHF",
-                description:
-                    "Dauerhafte Glätte auch für die Oberarme.\n\nPreise:\n• Einzelbehandlung: 330 CHF\n• 3er Abo: 930 CHF\n• 6er Abo: 1770 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-oberarme",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-            {
-                name: "IPL Hände",
-                price: "ab 120 CHF",
-                description:
-                    "Gepflegte Hände ohne störende Behaarung.\n\nPreise:\n• Einzelbehandlung: 120 CHF\n• 3er Abo: 340 CHF\n• 6er Abo: 650 CHF",
-                calHref: "https://cal.eu/gabriellasbeauty/ipl-haende",
-                imageUrl: PLACEHOLDER_IMAGE,
-                zone: "arme_beine",
-            },
-        ],
-    },
-]
+type SortMode = "az" | "price_asc" | "price_desc"
 
 // ─── BOOKING MODAL ───────────────────────────────────────────────────────────
 function BookingModal({
     treatment,
     onClose,
-    accentColor,
-    bgColor,
     textColor,
     mutedColor,
+    accentColor,
 }: any) {
     const isOpen = !!treatment
     const isMobile = useMediaQuery("(max-width: 768px)")
 
     useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = "hidden"
-        } else {
-            document.body.style.overflow = ""
-        }
+        document.body.style.overflow = isOpen ? "hidden" : ""
         return () => {
             document.body.style.overflow = ""
         }
     }, [isOpen])
 
     let iframeSrc = ""
-    if (treatment?.calHref) {
-        const baseUrl = treatment.calHref
+    if (treatment?.bookingUrl) {
+        const baseUrl = treatment.bookingUrl
         const separator = baseUrl.includes("?") ? "&" : "?"
         iframeSrc = `${baseUrl}${separator}embed=true&theme=light&layout=month_view&hideEventTypeDetails=1`
     }
@@ -678,15 +333,13 @@ function BookingModal({
                         initial={
                             isMobile
                                 ? { y: "100%" }
-                                : { opacity: 0, scale: 0.95, y: 0 }
+                                : { opacity: 0, scale: 0.95 }
                         }
-                        animate={
-                            isMobile ? { y: 0 } : { opacity: 1, scale: 1, y: 0 }
-                        }
+                        animate={isMobile ? { y: 0 } : { opacity: 1, scale: 1 }}
                         exit={
                             isMobile
                                 ? { y: "100%" }
-                                : { opacity: 0, scale: 0.95, y: 0 }
+                                : { opacity: 0, scale: 0.95 }
                         }
                         transition={{
                             type: "spring",
@@ -703,13 +356,13 @@ function BookingModal({
                             )
                                 onClose()
                         }}
-                        style={{ background: bgColor }}
+                        style={{ background: "#FFFFFF" }}
                         role="dialog"
                         aria-modal="true"
                     >
                         <div
                             className="cp-modal-header"
-                            style={{ background: bgColor }}
+                            style={{ background: "#FFFFFF" }}
                         >
                             {isMobile && (
                                 <div className="cp-modal-drag-handle">
@@ -724,18 +377,16 @@ function BookingModal({
                                     />
                                 </div>
                             )}
-
                             {!isMobile && (
                                 <button
                                     className="cp-modal-close-btn"
                                     onClick={onClose}
-                                    aria-label="Schließen"
+                                    aria-label="Schliessen"
                                     style={{ color: mutedColor }}
                                 >
                                     <IconClose />
                                 </button>
                             )}
-
                             <div
                                 className="cp-modal-header-info"
                                 style={{
@@ -761,11 +412,8 @@ function BookingModal({
                                         color: mutedColor,
                                         margin: 0,
                                         lineHeight: 1.5,
-                                        whiteSpace: "pre-line",
                                     }}
                                 >
-                                    {treatment.description} <br />
-                                    <br />
                                     <strong
                                         style={{
                                             color: accentColor,
@@ -815,18 +463,24 @@ function BookingModal({
     )
 }
 
-// ─── ACCORDION KÁRTYA ────────────────────────────────────────────────────────
+// ─── ACCORDION SOR ───────────────────────────────────────────────────────────
 function TreatmentRow({
     treatment,
     index,
     onBook,
     accentColor,
-    bgColor,
+    heroBgColor,
     textColor,
     mutedColor,
     borderColor,
 }: any) {
     const [open, setOpen] = useState(false)
+    const bullets = [
+        treatment.bullet1,
+        treatment.bullet2,
+        treatment.bullet3,
+        treatment.bullet4,
+    ].filter((b: string) => Boolean(b && b.trim() !== ""))
 
     return (
         <div className={`cp-row-wrapper ${open ? "is-open" : ""}`}>
@@ -842,6 +496,24 @@ function TreatmentRow({
                     </span>
                     <span className="cp-row-title" style={{ color: textColor }}>
                         {treatment.name}
+                        {treatment.badge && (
+                            <span
+                                style={{
+                                    marginLeft: 8,
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.5px",
+                                    textTransform: "uppercase",
+                                    padding: "2px 8px",
+                                    borderRadius: "99px",
+                                    backgroundColor: `${accentColor}18`,
+                                    color: accentColor,
+                                    verticalAlign: "middle",
+                                }}
+                            >
+                                {treatment.badge}
+                            </span>
+                        )}
                     </span>
                 </div>
                 <div className="cp-row-right">
@@ -892,12 +564,72 @@ function TreatmentRow({
                         >
                             <div className="cp-row-body-inner">
                                 <div className="cp-row-content">
-                                    <p
-                                        className="cp-row-desc"
-                                        style={{ color: mutedColor }}
-                                    >
-                                        {treatment.description}
-                                    </p>
+                                    {bullets.length > 0 && (
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                gap: 8,
+                                                marginBottom: 16,
+                                            }}
+                                        >
+                                            {bullets.map(
+                                                (b: string, i: number) => (
+                                                    <div
+                                                        key={i}
+                                                        style={{
+                                                            display: "flex",
+                                                            alignItems:
+                                                                "flex-start",
+                                                            gap: 8,
+                                                            fontSize: 13.5,
+                                                            color: textColor,
+                                                        }}
+                                                    >
+                                                        <span
+                                                            style={{
+                                                                color: accentColor,
+                                                            }}
+                                                        >
+                                                            <IconCheck />
+                                                        </span>
+                                                        <span>{b}</span>
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {(treatment.longDescription ||
+                                        treatment.teaser) && (
+                                        <div
+                                            className="cp-row-desc"
+                                            style={{ color: mutedColor }}
+                                        >
+                                            {treatment.longDescription ||
+                                                treatment.teaser}
+                                        </div>
+                                    )}
+
+                                    {treatment.priceAbo && (
+                                        <div
+                                            style={{
+                                                padding: "10px 16px",
+                                                backgroundColor: "#FAF6F0",
+                                                borderRadius: "6px",
+                                                borderLeft: `3px solid ${accentColor}`,
+                                                fontSize: 13,
+                                                color: textColor,
+                                                fontWeight: 500,
+                                                marginBottom: 16,
+                                                whiteSpace: "pre-line",
+                                            }}
+                                        >
+                                            <strong>Abo-Vorteil:</strong>{" "}
+                                            {treatment.priceAbo}
+                                        </div>
+                                    )}
+
                                     <div className="cp-row-action">
                                         <motion.button
                                             type="button"
@@ -937,7 +669,7 @@ function TreatmentRow({
                                                 outline: "none",
                                                 width: "100%",
                                                 maxWidth: "max-content",
-                                                marginTop: "16px",
+                                                marginTop: "4px",
                                             }}
                                         >
                                             Jetzt buchen
@@ -974,7 +706,10 @@ function TreatmentRow({
 }
 
 // ─── FŐ KOMPONENS ────────────────────────────────────────────────────────────
-export default function BookingPageUnified({
+export default function BookingPageUnifiedCMS({
+    dataSourceSelector = "[data-treatment-payload]",
+    categoriesOrder = "",
+    categoryDescriptions = "",
     heroEyebrow = "ONLINE TERMINBUCHUNG",
     heroTitle = "Wählen Sie Ihre Behandlung",
     heroDesc = "Buchen Sie Ihren Wunschtermin unkompliziert online. Wählen Sie untenstehend Ihre Behandlung aus, um freie Termine zu sehen.",
@@ -985,23 +720,128 @@ export default function BookingPageUnified({
     textColor = "#3a3028",
     mutedColor = "#7a7369",
     borderColor = "#EFEBE6",
-    categoryFilter = "alle",
     searchPlaceholder = "Behandlung suchen...",
+    disclaimerText = "Bitte beachten Sie: Die angegebenen Preise und Behandlungsdauer sind Richtwerte und können je nach individuellem Aufwand im Salon leicht variieren.",
 }: BookingPageProps) {
     const [selectedTreatment, setSelectedTreatment] =
-        useState<TreatmentSubItem | null>(null)
+        useState<RawTreatmentPayload | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
     const [isSearchFocused, setIsSearchFocused] = useState(false)
-
-    // ÚJ: Két-dimenziós szűrés (Kategória + Testrész) és Dropdown menü kezelése
-    const [activeCategory, setActiveCategory] = useState(
-        categoryFilter || "alle"
-    )
+    const [activeCategory, setActiveCategory] = useState("alle")
     const [activeZone, setActiveZone] = useState("alle")
+    const [sortMode, setSortMode] = useState<SortMode>("az")
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false)
     const filterMenuRef = useRef<HTMLDivElement>(null)
 
-    // Ha külső kattintás történik, bezárjuk a lenyíló szűrő menüt
+    const [rawItems, setRawItems] = useState<RawTreatmentPayload[]>([])
+    const rescanTimer = useRef<number | null>(null)
+
+    const scanDom = useCallback(() => {
+        const nodes = Array.from(
+            document.querySelectorAll(dataSourceSelector)
+        ) as HTMLElement[]
+        const parsed: RawTreatmentPayload[] = []
+        nodes.forEach((node) => {
+            const raw = node.getAttribute("data-treatment-payload")
+            if (!raw) return
+            try {
+                const obj = JSON.parse(raw)
+                if (obj && obj.name) parsed.push(obj)
+            } catch {
+                // hibás payload - kihagyjuk
+            }
+        })
+        setRawItems(parsed)
+    }, [dataSourceSelector])
+
+    useEffect(() => {
+        scanDom()
+        const observer = new MutationObserver(() => {
+            if (rescanTimer.current) window.clearTimeout(rescanTimer.current)
+            rescanTimer.current = window.setTimeout(scanDom, 200)
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        return () => {
+            observer.disconnect()
+            if (rescanTimer.current) window.clearTimeout(rescanTimer.current)
+        }
+    }, [scanDom])
+
+    const categoryDescMap = useMemo(() => {
+        const map = new Map<string, string>()
+        categoryDescriptions
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .forEach((line) => {
+                const idx = line.indexOf(":")
+                if (idx > -1)
+                    map.set(
+                        line.slice(0, idx).trim(),
+                        line.slice(idx + 1).trim()
+                    )
+            })
+        return map
+    }, [categoryDescriptions])
+
+    const groups = useMemo(() => {
+        if (rawItems.length === 0) return []
+        const manualOrder = categoriesOrder
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        const order: string[] = [...manualOrder]
+        const grouped = new Map<string, RawTreatmentPayload[]>()
+
+        rawItems.forEach((item) => {
+            const cats = (item.category || "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            if (cats.length === 0) cats.push("Weitere Behandlungen")
+            cats.forEach((cat) => {
+                if (!grouped.has(cat)) grouped.set(cat, [])
+                grouped.get(cat)!.push(item)
+                if (!order.includes(cat)) order.push(cat)
+            })
+        })
+
+        return order
+            .filter((cat) => grouped.has(cat))
+            .map((cat) => ({
+                id: slugify(cat),
+                categoryLabel: cat,
+                title: cat,
+                leadText:
+                    categoryDescMap.get(cat) ||
+                    `${grouped.get(cat)!.length} Behandlung${grouped.get(cat)!.length === 1 ? "" : "en"}`,
+                items: grouped.get(cat)!,
+            }))
+    }, [rawItems, categoriesOrder, categoryDescMap])
+
+    const categoryOptions = useMemo(
+        () => [
+            { id: "alle", label: "Alle Behandlungen" },
+            ...groups.map((g) => ({ id: g.id, label: g.categoryLabel })),
+        ],
+        [groups]
+    )
+
+    const zoneOptions = useMemo(() => {
+        const zones = new Set<string>()
+        rawItems.forEach((item) => {
+            if (item.zone && item.zone.trim() !== "")
+                zones.add(item.zone.trim())
+        })
+        if (zones.size === 0) return []
+        return [
+            { id: "alle", label: "Alle Zonen" },
+            ...Array.from(zones).map((z) => ({ id: z, label: z })),
+        ]
+    }, [rawItems])
+
+    const hasZoneFilter = zoneOptions.length > 0
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (
@@ -1016,13 +856,6 @@ export default function BookingPageUnified({
             document.removeEventListener("mousedown", handleClickOutside)
     }, [])
 
-    useEffect(() => {
-        if (categoryFilter) {
-            setActiveCategory(categoryFilter)
-        }
-    }, [categoryFilter])
-
-    // Enter leütésekor lágy görgetés a listához és menük bezárása
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             e.currentTarget.blur()
@@ -1039,47 +872,69 @@ export default function BookingPageUnified({
         }
     }
 
-    // 1. Kategória (Kategorie) szűrés
-    let visibleCategories =
-        activeCategory && activeCategory !== "alle"
-            ? CATEGORIZED_TREATMENTS.filter(
-                  (cat) => cat.category === activeCategory
-              )
-            : CATEGORIZED_TREATMENTS
-
-    // 2. Testrész (Körperzone) szűrés
-    if (activeZone && activeZone !== "alle") {
-        visibleCategories = visibleCategories
-            .map((cat) => {
-                const zoneItems = cat.items.filter(
-                    (item) => item.zone === activeZone
+    const sortItems = useCallback(
+        (items: RawTreatmentPayload[]) => {
+            const copy = [...items]
+            if (sortMode === "az") {
+                copy.sort((a, b) => a.name.localeCompare(b.name, "de"))
+            } else if (sortMode === "price_asc") {
+                copy.sort(
+                    (a, b) =>
+                        extractPriceNumber(a.price) -
+                        extractPriceNumber(b.price)
                 )
-                return { ...cat, items: zoneItems }
-            })
-            .filter((cat) => cat.items.length > 0)
-    }
+            } else if (sortMode === "price_desc") {
+                copy.sort(
+                    (a, b) =>
+                        extractPriceNumber(b.price) -
+                        extractPriceNumber(a.price)
+                )
+            }
+            return copy
+        },
+        [sortMode]
+    )
 
-    // 3. Valós idejű szöveges szűrés
     const normalizedQuery = searchQuery.trim().toLowerCase()
-    if (normalizedQuery.length > 0) {
-        visibleCategories = visibleCategories
-            .map((cat) => {
-                const filteredItems = cat.items.filter((item) => {
-                    const matchName = item.name
-                        .toLowerCase()
-                        .includes(normalizedQuery)
-                    const matchDesc = item.description
-                        .toLowerCase()
-                        .includes(normalizedQuery)
-                    const matchPrice = item.price
-                        .toLowerCase()
-                        .includes(normalizedQuery)
-                    return matchName || matchDesc || matchPrice
-                })
-                return { ...cat, items: filteredItems }
+
+    const visibleCategories = useMemo(() => {
+        return groups
+            .filter((g) => activeCategory === "alle" || g.id === activeCategory)
+            .map((g) => {
+                let items = g.items
+                if (hasZoneFilter && activeZone !== "alle") {
+                    items = items.filter((item) => item.zone === activeZone)
+                }
+                if (normalizedQuery.length > 0) {
+                    items = items.filter((item) => {
+                        const matchName = item.name
+                            .toLowerCase()
+                            .includes(normalizedQuery)
+                        const matchDesc = (
+                            item.longDescription ||
+                            item.teaser ||
+                            ""
+                        )
+                            .toLowerCase()
+                            .includes(normalizedQuery)
+                        const matchPrice = (item.price || "")
+                            .toLowerCase()
+                            .includes(normalizedQuery)
+                        return matchName || matchDesc || matchPrice
+                    })
+                }
+                items = sortItems(items)
+                return { ...g, items }
             })
-            .filter((cat) => cat.items.length > 0)
-    }
+            .filter((g) => g.items.length > 0)
+    }, [
+        groups,
+        activeCategory,
+        activeZone,
+        hasZoneFilter,
+        normalizedQuery,
+        sortItems,
+    ])
 
     const totalTreatments = visibleCategories.reduce(
         (total, cat) => total + cat.items.length,
@@ -1087,13 +942,25 @@ export default function BookingPageUnified({
     )
     const hasActiveFilters = activeCategory !== "alle" || activeZone !== "alle"
 
+    const SORT_TABS: { id: SortMode; label: string; icon: React.ReactNode }[] =
+        [
+            { id: "az", label: "A–Z", icon: null },
+            {
+                id: "price_asc",
+                label: "Preis",
+                icon: <IconArrowUp size={12} />,
+            },
+            {
+                id: "price_desc",
+                label: "Preis",
+                icon: <IconArrowDown size={12} />,
+            },
+        ]
+
     return (
         <>
             <style>{`
-                /* ALAP BEÁLLÍTÁSOK */
                 .cp-unified-wrap { width: 100%; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
-
-                /* ─── HERO SZEKCIÓ ─── */
                 .cp-hero { width: 100%; background-color: ${heroBgColor}; padding: 100px 24px 80px; display: flex; justify-content: center; text-align: center; }
                 .cp-hero-inner { max-width: 700px; display: flex; flex-direction: column; align-items: center; }
                 .cp-hero-eyebrow { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; color: ${accentColor}; text-transform: uppercase; margin-bottom: 24px; }
@@ -1103,105 +970,52 @@ export default function BookingPageUnified({
                 .cp-hero-scroll:hover { color: ${accentColor}; }
                 .cp-hero-scroll-underline { border-bottom: 1px solid ${accentColor}; padding-bottom: 2px; }
 
-                /* ─── LISTA SZEKCIÓ ─── */
                 .cp-list-section { width: 100%; background-color: ${listBgColor}; padding: 64px 24px 100px; display: flex; justify-content: center; }
                 .cp-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; }
 
-                /* ─── KERESŐSÁV + INTEGRÁLT SZŰRŐ IKON ─── */
-                .cp-search-wrap { width: 100%; max-width: 640px; margin: 0 auto 48px auto; position: relative; }
-                .cp-search-input {
-                    width: 100%; padding: 18px 96px 18px 52px;
-                    border-radius: 8px; border: 1px solid ${borderColor};
-                    background-color: #FFFFFF; font-family: 'Inter', sans-serif;
-                    font-size: 15px; color: ${textColor};
-                    box-shadow: 0 4px 20px rgba(58, 48, 40, 0.04);
-                    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-                    outline: none; box-sizing: border-box;
-                }
-                .cp-search-input:focus {
-                    border-color: ${accentColor};
-                    box-shadow: 0 8px 32px rgba(166, 128, 124, 0.15);
-                }
+                .cp-search-wrap { width: 100%; max-width: 640px; margin: 0 auto 20px auto; position: relative; }
+                .cp-search-input { width: 100%; padding: 18px 96px 18px 52px; border-radius: 8px; border: 1px solid ${borderColor}; background-color: #FFFFFF; font-family: 'Inter', sans-serif; font-size: 15px; color: ${textColor}; box-shadow: 0 4px 20px rgba(58, 48, 40, 0.04); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; }
+                .cp-search-input:focus { border-color: ${accentColor}; box-shadow: 0 8px 32px rgba(166, 128, 124, 0.15); }
                 .cp-search-input::placeholder { color: ${mutedColor}; opacity: 0.65; }
-                .cp-search-icon { 
-                    position: absolute; left: 18px; top: 50%; transform: translateY(-50%); 
-                    pointer-events: none; display: flex; align-items: center; 
-                    transition: color 0.3s ease;
-                }
-                .cp-search-actions {
-                    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-                    display: flex; align-items: center; gap: 6px;
-                }
-                .cp-search-btn {
-                    background: transparent; border: none; color: ${mutedColor};
-                    cursor: pointer; padding: 8px; border-radius: 6px;
-                    display: flex; align-items: center; justify-content: center;
-                    transition: all 0.2s ease; position: relative;
-                }
+                .cp-search-icon { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); pointer-events: none; display: flex; align-items: center; transition: color 0.3s ease; }
+                .cp-search-actions { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; }
+                .cp-search-btn { background: transparent; border: none; color: ${mutedColor}; cursor: pointer; padding: 8px; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; position: relative; }
                 .cp-search-btn:hover { background: ${heroBgColor}; color: ${textColor}; }
                 .cp-search-btn.is-active { background: ${accentColor}; color: #FFFFFF; }
-                .cp-filter-badge-dot {
-                    position: absolute; top: 6px; right: 6px; width: 6px; height: 6px;
-                    background: ${accentColor}; border-radius: 50%; border: 1px solid #FFFFFF;
-                }
+                .cp-filter-badge-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; background: ${accentColor}; border-radius: 50%; border: 1px solid #FFFFFF; }
                 .cp-search-divider { width: 1px; height: 20px; background: ${borderColor}; margin: 0 2px; }
 
-                /* ─── LENYÍLÓ SZŰRŐ MENÜ (DROPDOWN) ─── */
-                .cp-filter-dropdown {
-                    position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 50;
-                    background: #FFFFFF; border: 1px solid ${borderColor}; border-radius: 12px;
-                    padding: 24px; box-shadow: 0 16px 40px rgba(58, 48, 40, 0.12);
-                    display: flex; flex-direction: column; gap: 24px;
-                }
-                .cp-filter-section-title {
-                    font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600;
-                    letter-spacing: 0.15em; text-transform: uppercase; color: ${mutedColor};
-                    margin: 0 0 12px 0;
-                }
+                .cp-filter-dropdown { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 50; background: #FFFFFF; border: 1px solid ${borderColor}; border-radius: 12px; padding: 24px; box-shadow: 0 16px 40px rgba(58, 48, 40, 0.12); display: flex; flex-direction: column; gap: 24px; }
+                .cp-filter-section-title { font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: ${mutedColor}; margin: 0 0 12px 0; }
                 .cp-filter-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-                .cp-filter-pill {
-                    padding: 8px 16px; border-radius: 99px; border: 1px solid ${borderColor};
-                    background: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 12px;
-                    font-weight: 500; color: ${mutedColor}; cursor: pointer; transition: all 0.2s ease;
-                }
+                .cp-filter-pill { padding: 8px 16px; border-radius: 99px; border: 1px solid ${borderColor}; background: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 500; color: ${mutedColor}; cursor: pointer; transition: all 0.2s ease; }
                 .cp-filter-pill:hover { border-color: ${accentColor}; color: ${textColor}; }
-                .cp-filter-pill.is-active {
-                    background: ${accentColor}; border-color: ${accentColor}; color: #FFFFFF; font-weight: 600;
-                }
-                .cp-filter-footer {
-                    display: flex; justify-content: space-between; align-items: center;
-                    padding-top: 16px; border-top: 1px solid ${borderColor};
-                }
+                .cp-filter-pill.is-active { background: ${accentColor}; border-color: ${accentColor}; color: #FFFFFF; font-weight: 600; }
+                .cp-filter-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid ${borderColor}; }
 
-                /* ─── LISTA FEJLÉC ─── */
+                .cp-sort-tabs { display: flex; gap: 8px; max-width: 640px; margin: 0 auto 40px auto; }
+                .cp-sort-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border-radius: 8px; border: 1px solid ${borderColor}; background: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; color: ${mutedColor}; cursor: pointer; transition: all 0.2s ease; text-transform: uppercase; }
+                .cp-sort-tab:hover { border-color: ${accentColor}; color: ${textColor}; }
+                .cp-sort-tab.is-active { background: ${accentColor}; border-color: ${accentColor}; color: #FFFFFF; }
+
                 .cp-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; padding-bottom: 16px; border-bottom: 1px solid ${borderColor}; }
                 .cp-list-title { font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; color: ${mutedColor}; text-transform: uppercase; margin: 0; }
                 .cp-list-badge { font-size: 11px; font-weight: 500; color: ${mutedColor}; border: 1px solid ${borderColor}; padding: 6px 14px; border-radius: 20px; }
 
-                /* ─── KATEGÓRIÁK ─── */
                 .cp-category-group { margin-bottom: 56px; }
                 .cp-category-header { margin-bottom: 24px; padding-left: 8px; }
                 .cp-category-title { font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 400; color: ${textColor}; margin: 0 0 8px 0; letter-spacing: -0.01em; }
                 .cp-category-lead { font-family: 'Inter', sans-serif; font-size: 14px; color: ${mutedColor}; margin: 0; max-width: 600px; line-height: 1.6; }
 
-                /* ─── KÁRTYÁK (ROW) STÍLUSA ─── */
                 .cp-rows { display: flex; flex-direction: column; gap: 20px; }
-                .cp-row-wrapper { 
-                    background: #ffffff; border-radius: 16px; border: 1px solid ${borderColor}; 
-                    overflow: hidden; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
-                    box-shadow: 0 4px 16px rgba(0,0,0,0.03); 
-                }
-                .cp-row-wrapper:hover { 
-                    box-shadow: 0 12px 32px rgba(0,0,0,0.06); transform: translateY(-3px); border-color: ${accentColor}; 
-                }
-                .cp-row-wrapper.is-open { 
-                    box-shadow: 0 12px 32px rgba(166, 128, 124, 0.12); border-color: ${accentColor}; transform: translateY(0); 
-                }
+                .cp-row-wrapper { background: #ffffff; border-radius: 16px; border: 1px solid ${borderColor}; overflow: hidden; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 4px 16px rgba(0,0,0,0.03); }
+                .cp-row-wrapper:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.06); transform: translateY(-3px); border-color: ${accentColor}; }
+                .cp-row-wrapper.is-open { box-shadow: 0 12px 32px rgba(166, 128, 124, 0.12); border-color: ${accentColor}; transform: translateY(0); }
                 .cp-row-header { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; background: transparent; border: none; outline: none; cursor: pointer; text-align: left; border-radius: 16px; }
                 .cp-row-header:focus-visible { outline: 2px solid ${accentColor}; outline-offset: -2px; }
                 .cp-row-left { display: flex; align-items: flex-start; gap: 24px; flex: 1; }
                 .cp-row-num { font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 600; margin-top: 2px; opacity: 0.8; }
-                .cp-row-title { font-size: 16px; font-weight: 400; line-height: 1.4; max-width: 320px; }
+                .cp-row-title { font-size: 16px; font-weight: 400; line-height: 1.4; max-width: 360px; }
                 .cp-row-right { display: flex; align-items: center; gap: 32px; flex-shrink: 0; }
                 .cp-row-meta { display: flex; align-items: center; font-size: 13px; font-weight: 400; white-space: nowrap; gap: 6px; }
                 .cp-row-price { font-weight: 500; font-family: 'Inter', sans-serif; }
@@ -1209,10 +1023,7 @@ export default function BookingPageUnified({
                 .cp-row-header:hover .cp-row-trigger { color: ${accentColor}; }
                 .cp-row-wrapper.is-open .cp-row-trigger { color: ${accentColor}; }
                 .cp-row-toggle-text { font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
-                .cp-row-toggle-icon { 
-                    width: 36px; height: 36px; border-radius: 50%; border: 1px solid ${borderColor}; background: #ffffff; 
-                    display: flex; align-items: center; justify-content: center; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); color: ${mutedColor}; 
-                }
+                .cp-row-toggle-icon { width: 36px; height: 36px; border-radius: 50%; border: 1px solid ${borderColor}; background: #ffffff; display: flex; align-items: center; justify-content: center; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); color: ${mutedColor}; }
                 .cp-row-header:hover .cp-row-toggle-icon { border-color: ${accentColor}; color: ${accentColor}; background: ${heroBgColor}; }
                 .cp-row-wrapper.is-open .cp-row-toggle-icon { background: ${accentColor}; border-color: ${accentColor}; color: #ffffff; }
                 .cp-row-body { background: linear-gradient(to bottom, rgba(247, 236, 223, 0.15), transparent); }
@@ -1221,46 +1032,37 @@ export default function BookingPageUnified({
                 .cp-row-image-wrapper { width: 220px; flex-shrink: 0; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; border: 1px solid ${borderColor}; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
                 .cp-row-image { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
                 .cp-row-wrapper.is-open:hover .cp-row-image { transform: scale(1.03); }
-                .cp-row-desc { font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; max-width: 600px; white-space: pre-line; }
-                .cp-row-action { margin-top: auto; } 
 
-                /* ─── ALSÓ DÍSZÍTŐ ELVÁLASZTÓ ─── */
+                .cp-row-desc { font-size: 14px; line-height: 1.6; margin: 0 0 16px 0; max-width: 600px; white-space: pre-line; }
+
+                .cp-row-action { margin-top: auto; }
+
+                /* DISCLAIMER CSS */
+                .cp-disclaimer { font-family: 'Inter', sans-serif; font-size: 13px; color: ${mutedColor}; text-align: center; margin-top: 40px; max-width: 600px; margin-left: auto; margin-right: auto; line-height: 1.5; font-style: italic; }
+
                 .cp-bottom-divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 64px; opacity: 0.5; }
                 .cp-divider-line { height: 1px; width: 120px; background: ${borderColor}; }
                 .cp-divider-diamond { width: 6px; height: 6px; background: ${accentColor}; transform: rotate(45deg); }
 
-                /* ─── RESZPONSZÍV POPUP / BOTTOM SHEET ─── */
-                .cp-modal-overlay {
-                    position: fixed; inset: 0; background: rgba(28,20,15,0.45); z-index: 9998;
-                    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-                    display: flex; justify-content: center; align-items: center;
-                }
-                .cp-modal-content {
-                    width: 100%; max-width: 720px; height: 85vh; max-height: 800px;
-                    border-radius: 24px; display: flex; flex-direction: column; overflow: hidden;
-                    box-shadow: 0 24px 64px rgba(0,0,0,0.2); position: relative;
-                }
+                .cp-modal-overlay { position: fixed; inset: 0; background: rgba(28,20,15,0.45); z-index: 9998; display: flex; justify-content: center; align-items: center; }
+                .cp-modal-content { width: 100%; max-width: 720px; height: 85vh; max-height: 800px; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.2); position: relative; }
                 .cp-modal-header { flex-shrink: 0; z-index: 2; position: relative; }
-                .cp-modal-drag-handle { display: none; } 
-                .cp-modal-close-btn {
-                    position: absolute; top: 16px; right: 16px; width: 40px; height: 40px;
-                    display: flex; align-items: center; justify-content: center;
-                    background: transparent; border: none; cursor: pointer; border-radius: 50%;
-                    transition: background 0.2s ease;
-                }
+                .cp-modal-drag-handle { display: none; }
+                .cp-modal-close-btn { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; border-radius: 50%; transition: background 0.2s ease; }
                 .cp-modal-close-btn:hover { background: rgba(0,0,0,0.05); }
                 .cp-modal-header-info { padding: 24px 24px 16px; }
                 .cp-modal-iframe-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; background: #ffffff; }
 
-                /* ─── MOBIL NÉZET ─── */
                 @media (max-width: 768px) {
                     .cp-hero { padding: 80px 20px 60px; }
                     .cp-list-section { padding: 40px 20px 80px; }
-                    .cp-search-wrap { margin-bottom: 32px; }
+                    .cp-search-wrap { margin-bottom: 16px; }
                     .cp-search-input { padding: 14px 84px 14px 46px; font-size: 14px; }
                     .cp-search-icon { left: 14px; }
                     .cp-filter-dropdown { padding: 16px; gap: 20px; }
-                    
+                    .cp-sort-tabs { margin-bottom: 32px; }
+                    .cp-sort-tab { padding: 10px 8px; font-size: 10.5px; }
+
                     .cp-category-header { padding-left: 0; }
                     .cp-category-title { font-size: 20px; }
                     .cp-row-header { flex-direction: column; align-items: flex-start; padding: 20px; gap: 20px; }
@@ -1294,7 +1096,6 @@ export default function BookingPageUnified({
 
                 <section id="behandlungen" className="cp-list-section">
                     <div className="cp-container">
-                        {/* ─── KERESŐSÁV INTEGRÁLT SZŰRŐ IKONNAL ─── */}
                         <div className="cp-search-wrap" ref={filterMenuRef}>
                             <div
                                 className="cp-search-icon"
@@ -1321,7 +1122,6 @@ export default function BookingPageUnified({
                                 aria-label="Behandlungen durchsuchen"
                             />
 
-                            {/* Input belső gombjai: Törlés (X) és Lenyíló Szűrő (Filter) */}
                             <div className="cp-search-actions">
                                 {searchQuery.length > 0 && (
                                     <>
@@ -1354,7 +1154,6 @@ export default function BookingPageUnified({
                                 </button>
                             </div>
 
-                            {/* ─── SVÁJCI MINIMALISTA LENYÍLÓ SZŰRŐ MENÜ ─── */}
                             <AnimatePresence>
                                 {isFilterMenuOpen && (
                                     <motion.div
@@ -1375,13 +1174,12 @@ export default function BookingPageUnified({
                                             ease: SMOOTH_EASE,
                                         }}
                                     >
-                                        {/* 1. Kategória szűrés */}
                                         <div>
                                             <h4 className="cp-filter-section-title">
-                                                1. Kategorie wählen
+                                                Kategorie wählen
                                             </h4>
                                             <div className="cp-filter-grid">
-                                                {CATEGORY_OPTIONS.map((cat) => (
+                                                {categoryOptions.map((cat) => (
                                                     <button
                                                         key={cat.id}
                                                         type="button"
@@ -1398,31 +1196,30 @@ export default function BookingPageUnified({
                                             </div>
                                         </div>
 
-                                        {/* 2. Testrész (Körperzone) szűrés */}
-                                        <div>
-                                            <h4 className="cp-filter-section-title">
-                                                2. Nach Körperzone filtern (z.B.
-                                                für IPL & Waxing)
-                                            </h4>
-                                            <div className="cp-filter-grid">
-                                                {ZONE_OPTIONS.map((zone) => (
-                                                    <button
-                                                        key={zone.id}
-                                                        type="button"
-                                                        className={`cp-filter-pill ${activeZone === zone.id ? "is-active" : ""}`}
-                                                        onClick={() =>
-                                                            setActiveZone(
-                                                                zone.id
-                                                            )
-                                                        }
-                                                    >
-                                                        {zone.label}
-                                                    </button>
-                                                ))}
+                                        {hasZoneFilter && (
+                                            <div>
+                                                <h4 className="cp-filter-section-title">
+                                                    Nach Körperzone filtern
+                                                </h4>
+                                                <div className="cp-filter-grid">
+                                                    {zoneOptions.map((zone) => (
+                                                        <button
+                                                            key={zone.id}
+                                                            type="button"
+                                                            className={`cp-filter-pill ${activeZone === zone.id ? "is-active" : ""}`}
+                                                            onClick={() =>
+                                                                setActiveZone(
+                                                                    zone.id
+                                                                )
+                                                            }
+                                                        >
+                                                            {zone.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
 
-                                        {/* Szűrő lábléc: Visszaállítás vagy Bezárás */}
                                         <div className="cp-filter-footer">
                                             <span
                                                 style={{
@@ -1467,6 +1264,8 @@ export default function BookingPageUnified({
                                                             cursor: "pointer",
                                                             letterSpacing:
                                                                 "0.08em",
+                                                            padding: "6px 14px",
+                                                            borderRadius: "4px",
                                                         }}
                                                     >
                                                         Zurücksetzen
@@ -1504,6 +1303,20 @@ export default function BookingPageUnified({
                             </AnimatePresence>
                         </div>
 
+                        <div className="cp-sort-tabs">
+                            {SORT_TABS.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    className={`cp-sort-tab ${sortMode === tab.id ? "is-active" : ""}`}
+                                    onClick={() => setSortMode(tab.id)}
+                                >
+                                    {tab.icon}
+                                    <span>{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="cp-list-header">
                             <h2 className="cp-list-title">
                                 {searchQuery.length > 0
@@ -1517,8 +1330,17 @@ export default function BookingPageUnified({
                             </div>
                         </div>
 
-                        {/* ─── TALÁLATOK LISTÁZÁSA ─── */}
-                        {visibleCategories.length > 0 ? (
+                        {rawItems.length === 0 ? (
+                            <div
+                                style={{
+                                    textAlign: "center",
+                                    padding: "64px 24px",
+                                    color: mutedColor,
+                                }}
+                            >
+                                CMS-Daten werden geladen...
+                            </div>
+                        ) : visibleCategories.length > 0 ? (
                             visibleCategories.map((category) => (
                                 <div
                                     key={category.id}
@@ -1534,7 +1356,10 @@ export default function BookingPageUnified({
                                     </div>
                                     <div className="cp-rows">
                                         {category.items.map(
-                                            (treatment, itemIdx) => (
+                                            (
+                                                treatment: RawTreatmentPayload,
+                                                itemIdx: number
+                                            ) => (
                                                 <TreatmentRow
                                                     key={`${category.id}-${itemIdx}`}
                                                     treatment={treatment}
@@ -1543,7 +1368,7 @@ export default function BookingPageUnified({
                                                         setSelectedTreatment(t)
                                                     }
                                                     accentColor={accentColor}
-                                                    bgColor={heroBgColor}
+                                                    heroBgColor={heroBgColor}
                                                     textColor={textColor}
                                                     mutedColor={mutedColor}
                                                     borderColor={borderColor}
@@ -1554,7 +1379,6 @@ export default function BookingPageUnified({
                                 </div>
                             ))
                         ) : (
-                            /* ─── ÜRES ÁLLAPOT (ZERO RESULTS) ─── */
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -1630,6 +1454,13 @@ export default function BookingPageUnified({
                             </motion.div>
                         )}
 
+                        {/* ÉS ITT A JOGI / ÁR MEGJEGYZÉS (DISCLAIMER) EGYBŐL A LISTA ALATT */}
+                        {disclaimerText && visibleCategories.length > 0 && (
+                            <div className="cp-disclaimer">
+                                {disclaimerText}
+                            </div>
+                        )}
+
                         <div className="cp-bottom-divider">
                             <div className="cp-divider-line" />
                             <div className="cp-divider-diamond" />
@@ -1642,7 +1473,6 @@ export default function BookingPageUnified({
                     treatment={selectedTreatment}
                     onClose={() => setSelectedTreatment(null)}
                     accentColor={accentColor}
-                    bgColor="#ffffff"
                     textColor={textColor}
                     mutedColor={mutedColor}
                 />
@@ -1652,27 +1482,28 @@ export default function BookingPageUnified({
 }
 
 // ─── FRAMER CONTROLS ─────────────────────────────────────────────────────────
-addPropertyControls(BookingPageUnified, {
-    categoryFilter: {
-        type: ControlType.Enum,
-        title: "Kategória Szűrő (Alap)",
-        options: [
-            "alle",
-            "klassisch",
-            "medizinisch",
-            "qms",
-            "apparative",
-            "ipl",
-        ],
-        optionTitles: [
-            "Összes (Alle)",
-            "Klassische Kosmetik",
-            "Medizinische Kosmetik",
-            "QMS Medicosmetics",
-            "Spezialbehandlungen",
-            "IPL Behandlungen",
-        ],
-        defaultValue: "alle",
+addPropertyControls(BookingPageUnifiedCMS, {
+    dataSourceSelector: {
+        title: "[CMS] Adat-selector",
+        type: ControlType.String,
+        defaultValue: "[data-treatment-payload]",
+        description:
+            "Ne módosítsd, ha a CMSTreatmentReporter komponenst használod változtatás nélkül.",
+    },
+    categoriesOrder: {
+        title: "[CMS] Kategória sorrend",
+        type: ControlType.String,
+        defaultValue: "",
+        displayTextArea: true,
+        description:
+            "Opcionális, vesszővel elválasztva. Üresen hagyva a CMS-ben előforduló sorrendet követi.",
+    },
+    categoryDescriptions: {
+        title: "[CMS] Kategória leírások",
+        type: ControlType.String,
+        defaultValue: "",
+        displayTextArea: true,
+        description: "Soronként 'Kategória: leírás' formátumban, opcionális.",
     },
     searchPlaceholder: {
         type: ControlType.String,
@@ -1700,6 +1531,15 @@ addPropertyControls(BookingPageUnified, {
         type: ControlType.String,
         title: "Görgető Szöveg",
         defaultValue: "DIREKT ZUR BEHANDLUNGSÜBERSICHT",
+    },
+    disclaimerText: {
+        title: "[CMS] Jogi / Ár Megjegyzés",
+        type: ControlType.String,
+        defaultValue:
+            "Bitte beachten Sie: Die angegebenen Preise und Behandlungsdauer sind Richtwerte und können je nach individuellem Aufwand im Salon leicht variieren.",
+        displayTextArea: true,
+        description:
+            "A kezelések listája alatt megjelenő apróbetűs szöveg (köthető CMS sima szöveg mezőhöz).",
     },
     heroBgColor: {
         type: ControlType.Color,
