@@ -1,0 +1,915 @@
+// @ts-nocheck
+import React, { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
+import { addPropertyControls, ControlType } from "framer"
+import { motion, AnimatePresence } from "framer-motion"
+
+// ─── DESIGN TOKENS (GABRIELLA BEAUTY DESIGN SYSTEM) ──────────────────────────
+const TOKENS = {
+    primary: "#A6807C",
+    background: "#F7ECDF",
+    cardBg: "#FFFFFF",
+    text: "#3A3028",
+    muted: "#7A7369",
+    border: "#EAE3D9",
+    fontHeading: "'Montserrat', sans-serif",
+    fontBody: "'Inter', sans-serif",
+    radiusCta: 4,
+    shadowCta: "0 4px 16px rgba(0,0,0,0.12)",
+}
+
+const SMOOTH_EASE = [0.16, 1, 0.3, 1]
+const DESKTOP_BREAKPOINT = 1024
+
+// ─── RESZPONZÍV HOOK ────────────────────────────────────────────────────────
+function useMediaQuery(query: string) {
+    const [matches, setMatches] = useState(false)
+    useEffect(() => {
+        const media = window.matchMedia(query)
+        if (media.matches !== matches) setMatches(media.matches)
+        const listener = () => setMatches(media.matches)
+        media.addEventListener("change", listener)
+        return () => media.removeEventListener("change", listener)
+    }, [matches, query])
+    return matches
+}
+
+// ─── REACT PORTAL HELPER ─────────────────────────────────────────────────────
+const Portal = ({ children }: { children: React.ReactNode }) => {
+    const [mounted, setMounted] = useState(false)
+    useEffect(() => {
+        setMounted(true)
+        return () => setMounted(false)
+    }, [])
+
+    if (!mounted) return null
+    return createPortal(children, document.body)
+}
+
+function IconClose({
+    size = 24,
+    color = "currentColor",
+}: {
+    size?: number
+    color?: string
+}) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+            <path
+                d="M18 6L6 18M6 6l12 12"
+                stroke={color}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+// ─── FŐ KOMPONENS: ÖNÁLLÓ CTA GOMB + KAPCSOLAT MODAL ─────────────────────────
+export default function ContactCtaButton({
+    ctaLabel = "Kontakt",
+    fullWidth = false,
+
+    // Modal Text
+    modalTitle = "Kontaktieren Sie uns",
+    modalDesc = "Füllen Sie das untenstehende Formular aus. Unser Expertenteam wird sich so schnell wie möglich bei Ihnen melden.",
+    emailjsServiceId = "",
+    emailjsTemplateId = "",
+    emailjsAutoReplyTemplateId = "",
+    emailjsPublicKey = "",
+    labelName = "Vor- und Nachname",
+    labelEmail = "E-Mail Adresse",
+    labelPhone = "Telefonnummer (Optional)",
+    labelTopic = "Betreff Ihrer Anfrage",
+    topicPlaceholder = "Bitte auswählen",
+    topicOptions = [
+        "Beratung zu Behandlungen",
+        "Gutscheine & Geschenke",
+        "Allgemeine Anfrage",
+        "Feedback & Rückfragen",
+    ],
+    labelMessage = "Ihre Nachricht an uns",
+    submitText = "Nachricht absenden",
+    sendingText = "Wird gesendet...",
+    successTitle = "Vielen Dank!",
+    successMessage = "Ihre Nachricht wurde erfolgreich gesendet. Wir melden uns so schnell wie möglich bei Ihnen.",
+    errorMessage = "Beim Senden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder rufen Sie uns an.",
+
+    // Colors
+    accentColor = TOKENS.primary,
+    textColor = TOKENS.text,
+    mutedColor = TOKENS.muted,
+}: any) {
+    const [isModalOpen, setIsModalOpen] = useState(false)
+    const isDesktop = useMediaQuery(`(min-width: ${DESKTOP_BREAKPOINT}px)`)
+
+    // ─── EMAILJS ÁLLAPOT ──────────────────────────────────────────────────────
+    const [formData, setFormData] = useState({
+        name: "",
+        email: "",
+        phone: "",
+        topic: "",
+        message: "",
+        _honeypot: "",
+    })
+    const [formStatus, setFormStatus] = useState<
+        "idle" | "sending" | "success" | "error"
+    >("idle")
+
+    // EmailJS SDK betöltése CDN-ről
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        if ((window as any).emailjs) {
+            if (emailjsPublicKey) (window as any).emailjs.init(emailjsPublicKey)
+            return
+        }
+        const existing = document.getElementById("emailjs-sdk")
+        if (existing) return
+        const script = document.createElement("script")
+        script.id = "emailjs-sdk"
+        script.src =
+            "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"
+        script.async = true
+        script.onload = () => {
+            if ((window as any).emailjs && emailjsPublicKey) {
+                ;(window as any).emailjs.init(emailjsPublicKey)
+            }
+        }
+        document.body.appendChild(script)
+    }, [emailjsPublicKey])
+
+    const handleFieldChange = (
+        e: React.ChangeEvent<
+            HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+        >
+    ) => {
+        const { name, value } = e.target
+        setFormData((prev) => ({ ...prev, [name]: value }))
+    }
+
+    const resetForm = () => {
+        setFormData({
+            name: "",
+            email: "",
+            phone: "",
+            topic: "",
+            message: "",
+            _honeypot: "",
+        })
+    }
+
+    const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+
+        if (formData._honeypot) {
+            setFormStatus("success")
+            resetForm()
+            return
+        }
+
+        if (!emailjsServiceId || !emailjsTemplateId || !emailjsPublicKey) {
+            console.error(
+                "EmailJS nincs teljesen konfigurálva: Service ID, Sablon ID (Gabinak) és Public Key mind szükséges a property panelen."
+            )
+            setFormStatus("error")
+            return
+        }
+
+        const emailjs = (window as any).emailjs
+        if (!emailjs) {
+            console.error(
+                "Az EmailJS SDK még nem töltődött be. Próbáld újra egy pillanat múlva."
+            )
+            setFormStatus("error")
+            return
+        }
+
+        setFormStatus("sending")
+
+        // 1) GABINAK KÜLDŐ ÉRTESÍTÉS ("Contact Us" sablon) — ő kapja az érdeklődő adatait
+        const notifyParams = {
+            name: formData.name,
+            user_name: formData.name,
+            email: formData.email,
+            user_email: formData.email,
+            phone: formData.phone,
+            user_phone: formData.phone,
+            topic: formData.topic,
+            user_topic: formData.topic,
+            subject: formData.topic,
+            message: formData.message,
+        }
+
+        // 2) A VENDÉGNEK KÜLDŐ AUTOMATA VISSZAIGAZOLÁS ("Auto-Reply" sablon)
+        const autoReplyParams = {
+            user_name: formData.name,
+            message: formData.message,
+            user_contact: formData.email,
+            topic: formData.topic,
+            user_topic: formData.topic,
+            subject: formData.topic,
+        }
+
+        try {
+            const sendPromises = [
+                emailjs.send(
+                    emailjsServiceId,
+                    emailjsTemplateId,
+                    notifyParams,
+                    emailjsPublicKey
+                ),
+            ]
+
+            if (emailjsAutoReplyTemplateId) {
+                sendPromises.push(
+                    emailjs.send(
+                        emailjsServiceId,
+                        emailjsAutoReplyTemplateId,
+                        autoReplyParams,
+                        emailjsPublicKey
+                    )
+                )
+            }
+
+            await Promise.all(sendPromises)
+            setFormStatus("success")
+            resetForm()
+        } catch (err) {
+            console.error("EmailJS küldési hiba:", err)
+            setFormStatus("error")
+        }
+    }
+
+    // Scroll blockolása modal esetén
+    useEffect(() => {
+        if (isModalOpen) {
+            document.body.style.overflow = "hidden"
+        } else {
+            document.body.style.overflow = ""
+        }
+        return () => {
+            document.body.style.overflow = ""
+        }
+    }, [isModalOpen])
+
+    useEffect(() => {
+        if (isModalOpen) setFormStatus("idle")
+    }, [isModalOpen])
+
+    return (
+        <>
+            <link
+                href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Montserrat:wght@400;500;600&display=swap"
+                rel="stylesheet"
+            />
+
+            <style>{`
+                /* ── CTA GOMB ── */
+                .cta-btn {
+                    background: ${accentColor}; color: #fff; font-family: ${TOKENS.fontHeading};
+                    font-size: 12px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase;
+                    padding: 12px 24px; border: none; border-radius: ${TOKENS.radiusCta}px;
+                    cursor: pointer; box-shadow: ${TOKENS.shadowCta}; transition: all 0.2s ease;
+                    display: inline-flex; align-items: center; justify-content: center;
+                    width: ${fullWidth ? "100%" : "auto"};
+                    box-sizing: border-box;
+                }
+                .cta-btn:hover { background: #8f6d69; transform: translateY(-1px); }
+
+                /* ── MODAL STYLES ── */
+                .contact-modal-overlay {
+                    position: fixed; 
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    z-index: 999999;
+                    background: rgba(28, 20, 15, 0.55);
+                    display: flex; justify-content: center; align-items: flex-end;
+                    pointer-events: auto;
+                }
+                .contact-modal-content {
+                    width: 100%; 
+                    background: ${TOKENS.background}; 
+                    border-radius: 24px 24px 0 0; 
+                    display: flex; flex-direction: column; overflow: hidden;
+                    box-shadow: 0 -8px 32px rgba(0,0,0,0.15); 
+                    position: relative;
+                    max-height: 85dvh; 
+                    height: auto;
+                }
+                .contact-modal-drag-handle {
+                    width: 100%; display: flex; justify-content: center;
+                    padding: 16px 0 8px; cursor: grab; flex-shrink: 0;
+                }
+                .contact-modal-header {
+                    padding: 16px 24px; flex-shrink: 0;
+                    border-bottom: 1px solid ${TOKENS.border};
+                    display: flex; align-items: center; justify-content: space-between;
+                }
+                .contact-form-body {
+                    padding: 16px 24px 32px;
+                    overflow-y: auto;
+                    flex: 1;
+                }
+                .contact-form-group {
+                    margin-bottom: 20px;
+                    text-align: left;
+                }
+                .contact-form-label {
+                    display: block; font-family: ${TOKENS.fontHeading}; font-size: 11px;
+                    font-weight: 600; letter-spacing: 0.08em; color: ${mutedColor};
+                    text-transform: uppercase; margin-bottom: 8px;
+                }
+                .contact-form-input {
+                    width: 100%; padding: 14px 16px; font-family: ${TOKENS.fontBody};
+                    font-size: 14px; color: ${textColor}; background: #FFFFFF;
+                    border: 1px solid ${TOKENS.border}; border-radius: 4px;
+                    outline: none; transition: border-color 0.3s ease, box-shadow 0.3s ease;
+                    box-sizing: border-box;
+                }
+                .contact-form-input:focus {
+                    border-color: ${accentColor}; box-shadow: 0 0 0 3px ${accentColor}20;
+                }
+                textarea.contact-form-input {
+                    min-height: 100px; resize: vertical;
+                }
+                .contact-form-select {
+                    appearance: none;
+                    -webkit-appearance: none;
+                    -moz-appearance: none;
+                    padding-right: 40px;
+                    cursor: pointer;
+                    color: ${textColor};
+                }
+                .contact-form-select:invalid {
+                    color: ${mutedColor};
+                }
+                .contact-form-select-chevron {
+                    position: absolute;
+                    right: 16px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    pointer-events: none;
+                    display: flex;
+                }
+
+                @media (min-width: ${DESKTOP_BREAKPOINT}px) {
+                    .contact-modal-content {
+                        border-radius: ${TOKENS.radiusCta}px;
+                        max-width: 500px;
+                        margin: 0 auto;
+                    }
+                    .contact-modal-drag-handle { display: none; }
+                    .contact-modal-overlay { align-items: center; }
+                }
+            `}</style>
+
+            <motion.button
+                className="cta-btn"
+                onClick={() => setIsModalOpen(true)}
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.2, ease: SMOOTH_EASE }}
+            >
+                {ctaLabel}
+            </motion.button>
+
+            {/* ── BOTTOM SHEET (mobil) / KÖZÉPRE NYÍLÓ POPUP (desktop) ── */}
+            <Portal>
+                <AnimatePresence>
+                    {isModalOpen && (
+                        <div className="contact-modal-overlay">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsModalOpen(false)}
+                                style={{ position: "absolute", inset: 0 }}
+                            />
+
+                            <motion.div
+                                className="contact-modal-content"
+                                initial={
+                                    isDesktop
+                                        ? { opacity: 0, scale: 0.96, y: 16 }
+                                        : { y: "100%", opacity: 0 }
+                                }
+                                animate={
+                                    isDesktop
+                                        ? { opacity: 1, scale: 1, y: 0 }
+                                        : { y: 0, opacity: 1 }
+                                }
+                                exit={
+                                    isDesktop
+                                        ? { opacity: 0, scale: 0.96, y: 16 }
+                                        : { y: "100%", opacity: 0 }
+                                }
+                                transition={
+                                    isDesktop
+                                        ? { duration: 0.3, ease: SMOOTH_EASE }
+                                        : {
+                                              type: "spring",
+                                              damping: 30,
+                                              stiffness: 350,
+                                          }
+                                }
+                                drag={isDesktop ? false : "y"}
+                                dragElastic={{ top: 0, bottom: 0.2 }}
+                                dragMomentum={false}
+                                dragConstraints={{ top: 0, bottom: 600 }}
+                                onDragEnd={(_, info) => {
+                                    if (!isDesktop) {
+                                        if (
+                                            info.offset.y > 120 ||
+                                            info.velocity.y > 400
+                                        ) {
+                                            setIsModalOpen(false)
+                                        }
+                                    }
+                                }}
+                            >
+                                {!isDesktop && (
+                                    <div className="contact-modal-drag-handle">
+                                        <div
+                                            style={{
+                                                width: "48px",
+                                                height: "5px",
+                                                borderRadius: "4px",
+                                                backgroundColor:
+                                                    "rgba(0,0,0,0.15)",
+                                            }}
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="contact-modal-header">
+                                    <div>
+                                        <h3
+                                            style={{
+                                                fontFamily: TOKENS.fontHeading,
+                                                fontSize: "18px",
+                                                fontWeight: 600,
+                                                color: textColor,
+                                                margin: "0 0 4px 0",
+                                            }}
+                                        >
+                                            {modalTitle}
+                                        </h3>
+                                        <p
+                                            style={{
+                                                fontFamily: TOKENS.fontBody,
+                                                fontSize: "13px",
+                                                color: mutedColor,
+                                                margin: 0,
+                                                lineHeight: 1.5,
+                                            }}
+                                        >
+                                            {modalDesc}
+                                        </p>
+                                    </div>
+
+                                    {isDesktop && (
+                                        <button
+                                            onClick={() =>
+                                                setIsModalOpen(false)
+                                            }
+                                            style={{
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: mutedColor,
+                                                padding: 8,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                            }}
+                                        >
+                                            <IconClose size={24} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="contact-form-body">
+                                    {formStatus === "success" ? (
+                                        <div
+                                            style={{
+                                                textAlign: "center",
+                                                padding: "24px 8px",
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    width: 56,
+                                                    height: 56,
+                                                    borderRadius: "60%",
+                                                    backgroundColor: `${accentColor}18`,
+                                                    color: accentColor,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    margin: "0 auto 16px auto",
+                                                }}
+                                            >
+                                                <svg
+                                                    width="24"
+                                                    height="24"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                >
+                                                    <path
+                                                        d="M4 12.5L9 17.5L20 6.5"
+                                                        stroke={accentColor}
+                                                        strokeWidth="2.2"
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                    />
+                                                </svg>
+                                            </div>
+                                            <h4
+                                                style={{
+                                                    fontFamily:
+                                                        TOKENS.fontHeading,
+                                                    fontSize: 16,
+                                                    fontWeight: 600,
+                                                    color: textColor,
+                                                    margin: "0 0 6px 0",
+                                                }}
+                                            >
+                                                {successTitle}
+                                            </h4>
+                                            <p
+                                                style={{
+                                                    fontFamily: TOKENS.fontBody,
+                                                    fontSize: 13.5,
+                                                    color: mutedColor,
+                                                    margin: 0,
+                                                    lineHeight: 1.5,
+                                                }}
+                                            >
+                                                {successMessage}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <form onSubmit={handleFormSubmit}>
+                                            <div className="contact-form-group">
+                                                <label
+                                                    className="contact-form-label"
+                                                    htmlFor="name"
+                                                >
+                                                    {labelName}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    id="name"
+                                                    name="name"
+                                                    required
+                                                    value={formData.name}
+                                                    onChange={handleFieldChange}
+                                                    className="contact-form-input"
+                                                    placeholder="Maria Muster"
+                                                />
+                                            </div>
+                                            <div className="contact-form-group">
+                                                <label
+                                                    className="contact-form-label"
+                                                    htmlFor="email"
+                                                >
+                                                    {labelEmail}
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    id="email"
+                                                    name="email"
+                                                    required
+                                                    value={formData.email}
+                                                    onChange={handleFieldChange}
+                                                    className="contact-form-input"
+                                                    placeholder="maria@beispiel.ch"
+                                                />
+                                            </div>
+                                            <div className="contact-form-group">
+                                                <label
+                                                    className="contact-form-label"
+                                                    htmlFor="phone"
+                                                >
+                                                    {labelPhone}
+                                                </label>
+                                                <input
+                                                    type="tel"
+                                                    id="phone"
+                                                    name="phone"
+                                                    value={formData.phone}
+                                                    onChange={handleFieldChange}
+                                                    className="contact-form-input"
+                                                    placeholder="+41 79 123 45 67"
+                                                />
+                                            </div>
+                                            <div className="contact-form-group">
+                                                <label
+                                                    className="contact-form-label"
+                                                    htmlFor="topic"
+                                                >
+                                                    {labelTopic}
+                                                </label>
+                                                <div
+                                                    style={{
+                                                        position: "relative",
+                                                    }}
+                                                >
+                                                    <select
+                                                        id="topic"
+                                                        name="topic"
+                                                        required
+                                                        value={formData.topic}
+                                                        onChange={
+                                                            handleFieldChange
+                                                        }
+                                                        className="contact-form-input contact-form-select"
+                                                    >
+                                                        <option
+                                                            value=""
+                                                            disabled
+                                                        >
+                                                            {topicPlaceholder}
+                                                        </option>
+                                                        {topicOptions.map(
+                                                            (
+                                                                opt: string,
+                                                                idx: number
+                                                            ) => (
+                                                                <option
+                                                                    key={idx}
+                                                                    value={opt}
+                                                                >
+                                                                    {opt}
+                                                                </option>
+                                                            )
+                                                        )}
+                                                    </select>
+                                                    <span className="contact-form-select-chevron">
+                                                        <svg
+                                                            width="12"
+                                                            height="12"
+                                                            viewBox="0 0 14 14"
+                                                            fill="none"
+                                                        >
+                                                            <path
+                                                                d="M2.5 5L7 9.5L11.5 5"
+                                                                stroke={
+                                                                    mutedColor
+                                                                }
+                                                                strokeWidth="1.6"
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                            />
+                                                        </svg>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="contact-form-group">
+                                                <label
+                                                    className="contact-form-label"
+                                                    htmlFor="message"
+                                                >
+                                                    {labelMessage}
+                                                </label>
+                                                <textarea
+                                                    id="message"
+                                                    name="message"
+                                                    required
+                                                    value={formData.message}
+                                                    onChange={handleFieldChange}
+                                                    className="contact-form-input"
+                                                    placeholder="Wie können wir Ihnen helfen?"
+                                                ></textarea>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                name="_honeypot"
+                                                value={formData._honeypot}
+                                                onChange={handleFieldChange}
+                                                style={{ display: "none" }}
+                                                tabIndex={-1}
+                                                autoComplete="off"
+                                            />
+
+                                            {formStatus === "error" && (
+                                                <p
+                                                    style={{
+                                                        fontFamily:
+                                                            TOKENS.fontBody,
+                                                        fontSize: 12.5,
+                                                        color: "#B5453D",
+                                                        margin: "0 0 12px 0",
+                                                    }}
+                                                >
+                                                    {errorMessage}
+                                                </p>
+                                            )}
+
+                                            <motion.button
+                                                type="submit"
+                                                disabled={
+                                                    formStatus === "sending"
+                                                }
+                                                whileHover={
+                                                    formStatus === "sending"
+                                                        ? {}
+                                                        : {
+                                                              y: -2,
+                                                              boxShadow:
+                                                                  "0 8px 24px rgba(166, 128, 124, 0.25)",
+                                                          }
+                                                }
+                                                whileTap={
+                                                    formStatus === "sending"
+                                                        ? {}
+                                                        : { scale: 0.98 }
+                                                }
+                                                transition={{
+                                                    duration: 0.3,
+                                                    ease: SMOOTH_EASE,
+                                                }}
+                                                style={{
+                                                    width: "100%",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    backgroundColor:
+                                                        accentColor,
+                                                    color: "#FFFFFF",
+                                                    fontFamily:
+                                                        TOKENS.fontHeading,
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    letterSpacing: "0.1em",
+                                                    textTransform: "uppercase",
+                                                    padding: "16px 24px",
+                                                    borderRadius:
+                                                        TOKENS.radiusCta,
+                                                    border: "none",
+                                                    cursor:
+                                                        formStatus === "sending"
+                                                            ? "default"
+                                                            : "pointer",
+                                                    opacity:
+                                                        formStatus === "sending"
+                                                            ? 0.7
+                                                            : 1,
+                                                    boxShadow: TOKENS.shadowCta,
+                                                    marginTop: "8px",
+                                                }}
+                                            >
+                                                {formStatus === "sending"
+                                                    ? sendingText
+                                                    : submitText}
+                                            </motion.button>
+                                        </form>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+            </Portal>
+        </>
+    )
+}
+
+// ─── FRAMER PROPERTY CONTROLS ────────────────────────────────────────────────
+addPropertyControls(ContactCtaButton, {
+    ctaLabel: {
+        type: ControlType.String,
+        title: "CTA felirat (Gomb)",
+        defaultValue: "Kontakt",
+    },
+    fullWidth: {
+        type: ControlType.Boolean,
+        title: "Teljes Szélesség",
+        defaultValue: false,
+        description:
+            "Kapcsold be, ha a gomb ki kell hogy töltse a szülő elem teljes szélességét (pl. mobil menüben).",
+    },
+    modalTitle: {
+        type: ControlType.String,
+        title: "Modal Cím",
+        defaultValue: "Kontaktieren Sie uns",
+    },
+    modalDesc: {
+        type: ControlType.String,
+        title: "Modal Leírás",
+        defaultValue:
+            "Füllen Sie das untenstehende Formular aus. Unser Expertenteam wird sich so schnell wie möglich bei Ihnen melden.",
+        displayTextArea: true,
+    },
+    emailjsServiceId: {
+        type: ControlType.String,
+        title: "[EmailJS] Service ID",
+        defaultValue: "",
+        description:
+            "Az EmailJS fiókodban létrehozott email szolgáltatás (Service) azonosítója.",
+    },
+    emailjsTemplateId: {
+        type: ControlType.String,
+        title: "[EmailJS] Sablon ID (Gabinak)",
+        defaultValue: "",
+        description:
+            "A 'Contact Us' sablon azonosítója (template_nn8ma5w) — ez küldi az értesítést Gabinak az érdeklődő adataival. Elérhető változók (mindkét/több elnevezés működik): {{name}} / {{user_name}}, {{email}} / {{user_email}}, {{phone}} / {{user_phone}}, {{topic}} / {{user_topic}} / {{subject}}, {{message}}.",
+    },
+    emailjsAutoReplyTemplateId: {
+        type: ControlType.String,
+        title: "[EmailJS] Sablon ID (Vendégnek)",
+        defaultValue: "",
+        description:
+            "Az 'Auto-Reply' sablon azonosítója (template_xu098yl) — ez küldi az automatikus visszaigazolást a formot kitöltő vendégnek. Elérhető változók: {{user_name}}, {{message}}, {{user_contact}}, {{topic}} / {{user_topic}} / {{subject}}. Ha üresen hagyod, csak Gabi kap emailt.",
+    },
+    emailjsPublicKey: {
+        type: ControlType.String,
+        title: "[EmailJS] Public Key",
+        defaultValue: "",
+    },
+    labelName: {
+        type: ControlType.String,
+        title: "Név Címke",
+        defaultValue: "Vor- und Nachname",
+    },
+    labelEmail: {
+        type: ControlType.String,
+        title: "Email Címke",
+        defaultValue: "E-Mail Adresse",
+    },
+    labelPhone: {
+        type: ControlType.String,
+        title: "Telefon Címke",
+        defaultValue: "Telefonnummer (Optional)",
+    },
+    labelTopic: {
+        type: ControlType.String,
+        title: "Téma Címke",
+        defaultValue: "Betreff Ihrer Anfrage",
+    },
+    topicPlaceholder: {
+        type: ControlType.String,
+        title: "Téma Placeholder",
+        defaultValue: "Bitte auswählen",
+    },
+    topicOptions: {
+        type: ControlType.Array,
+        title: "Téma Opciók",
+        control: { type: ControlType.String },
+        defaultValue: [
+            "Beratung zu Behandlungen",
+            "Gutscheine & Geschenke",
+            "Allgemeine Anfrage",
+            "Feedback & Rückfragen",
+        ],
+    },
+    labelMessage: {
+        type: ControlType.String,
+        title: "Üzenet Címke",
+        defaultValue: "Ihre Nachricht an uns",
+    },
+    submitText: {
+        type: ControlType.String,
+        title: "Küldés Gomb",
+        defaultValue: "Nachricht absenden",
+    },
+    sendingText: {
+        type: ControlType.String,
+        title: "Küldés Alatt Szöveg",
+        defaultValue: "Wird gesendet...",
+    },
+    successTitle: {
+        type: ControlType.String,
+        title: "[Siker] Cím",
+        defaultValue: "Vielen Dank!",
+    },
+    successMessage: {
+        type: ControlType.String,
+        title: "[Siker] Üzenet",
+        defaultValue:
+            "Ihre Nachricht wurde erfolgreich gesendet. Wir melden uns so schnell wie möglich bei Ihnen.",
+        displayTextArea: true,
+    },
+    errorMessage: {
+        type: ControlType.String,
+        title: "[Hiba] Üzenet",
+        defaultValue:
+            "Beim Senden ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder rufen Sie uns an.",
+        displayTextArea: true,
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent",
+        defaultValue: TOKENS.primary,
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg",
+        defaultValue: TOKENS.text,
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Muted",
+        defaultValue: TOKENS.muted,
+    },
+})
