@@ -1,0 +1,678 @@
+// ============ SearchFilterBarAdvanced.tsx (ÚJ FÁJL) ============
+// Összevont szűrősáv: kereső+autocomplete, kategória, ár, cél/kulcsszó.
+// Mind a négy ugyanabba a globális window.__iplFilterState-be ír,
+// kibővített formában: { search, category, priceRange, goal }
+
+import * as React from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { addPropertyControls, ControlType } from "framer"
+import { motion, AnimatePresence } from "framer-motion"
+
+const EASE = [0.16, 1, 0.3, 1]
+
+function IconSearch({ color, size = 16 }: { color: string; size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+        </svg>
+    )
+}
+function IconX({ color, size = 14 }: { color: string; size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+            <path
+                d="M18 6L6 18M6 6L18 18"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+function IconChevron({
+    color,
+    open,
+    size = 15,
+}: {
+    color: string
+    open: boolean
+    size?: number
+}) {
+    return (
+        <motion.svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: 0.25, ease: EASE }}
+        >
+            <path d="M6 9l6 6 6-6" />
+        </motion.svg>
+    )
+}
+
+interface RangeOption {
+    label: string
+    value: string
+    min: number
+    max: number
+}
+
+interface FilterState {
+    search: string
+    category: string
+    priceRange: string
+    goal: string
+}
+
+interface Props {
+    searchPlaceholder?: string
+    keywordsCsv?: string
+    showAutocomplete?: boolean
+
+    categoriesCsv?: string
+    allCategoryLabel?: string
+
+    priceRangesCsv?: string
+    allPriceLabel?: string
+
+    goalsCsv?: string
+    allGoalLabel?: string
+
+    accentColor?: string
+    textColor?: string
+    mutedColor?: string
+    bgColor?: string
+    fillColor?: string
+    radius?: number
+    chipRadius?: number
+
+    style?: React.CSSProperties
+}
+
+function parsePriceRanges(csv: string): RangeOption[] {
+    // Formátum: "0-100,100-200,200-500,500-9999" → felirat auto-generálva
+    return csv
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => {
+            const [minS, maxS] = s.split("-").map((x) => x.trim())
+            const min = parseInt(minS, 10) || 0
+            const max = parseInt(maxS, 10) || 999999
+            const label = max >= 9999 ? `ab ${min} CHF` : `${min}–${max} CHF`
+            return { label, value: s, min, max }
+        })
+}
+
+function useOutsideClose(
+    open: boolean,
+    ref: React.RefObject<HTMLElement>,
+    onClose: () => void
+) {
+    useEffect(() => {
+        if (!open) return
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node))
+                onClose()
+        }
+        document.addEventListener("mousedown", handler)
+        return () => document.removeEventListener("mousedown", handler)
+    }, [open, ref, onClose])
+}
+
+// Egyszerű, önálló dropdown gomb + panel — kategória / ár / cél mind ezt használja.
+function FilterDropdown({
+    label,
+    activeLabel,
+    options,
+    activeValue,
+    onSelect,
+    accentColor,
+    textColor,
+    mutedColor,
+    fillColor,
+    radius,
+    chipRadius,
+}: {
+    label: string
+    activeLabel: string | null
+    options: { label: string; value: string }[]
+    activeValue: string
+    onSelect: (value: string) => void
+    accentColor: string
+    textColor: string
+    mutedColor: string
+    fillColor: string
+    radius: number
+    chipRadius: number
+}) {
+    const [open, setOpen] = useState(false)
+    const ref = useRef<HTMLDivElement>(null)
+    useOutsideClose(open, ref, () => setOpen(false))
+    const isActive = !!activeLabel
+
+    return (
+        <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+            <motion.button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                whileTap={{ scale: 0.96 }}
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "12px 16px",
+                    background: isActive ? accentColor : fillColor,
+                    border: `1px solid ${isActive ? accentColor : "rgba(166,128,124,0.2)"}`,
+                    borderRadius: radius,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                }}
+            >
+                <span
+                    style={{
+                        fontFamily: "'Montserrat', sans-serif",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: isActive ? "#FFFFFF" : textColor,
+                    }}
+                >
+                    {activeLabel || label}
+                </span>
+                <IconChevron
+                    color={isActive ? "#FFFFFF" : mutedColor}
+                    open={open}
+                />
+            </motion.button>
+
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.16 }}
+                        style={{
+                            position: "absolute",
+                            top: "calc(100% + 6px)",
+                            left: 0,
+                            minWidth: 220,
+                            background: "#FFFFFF",
+                            border: "1px solid rgba(166,128,124,0.18)",
+                            borderRadius: radius,
+                            boxShadow: "0 12px 32px rgba(58,48,40,0.14)",
+                            padding: 10,
+                            zIndex: 40,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                        }}
+                    >
+                        {options.map((opt) => {
+                            const selected = opt.value === activeValue
+                            return (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault()
+                                        onSelect(opt.value)
+                                        setOpen(false)
+                                    }}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        padding: "9px 12px",
+                                        border: "none",
+                                        borderRadius: chipRadius,
+                                        background: selected
+                                            ? `${accentColor}18`
+                                            : "transparent",
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                        fontFamily: "'Inter', sans-serif",
+                                        fontSize: 13.5,
+                                        color: selected
+                                            ? accentColor
+                                            : textColor,
+                                        fontWeight: selected ? 600 : 400,
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            )
+                        })}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    )
+}
+
+export default function SearchFilterBarAdvanced({
+    searchPlaceholder = "Behandlung suchen …",
+    keywordsCsv = "Straffe Haut,Anti-Aging,Tiefenreinigung,Sensible Haut",
+    showAutocomplete = true,
+
+    categoriesCsv = "Klassische Kosmetikbehandlung,Medizinische Kosmetikbehandlung,QMS Medicosmetics,Spezial Kosmetikbehandlung,Haarentfernung IPL",
+    allCategoryLabel = "Alle Kategorien",
+
+    priceRangesCsv = "0-100,100-200,200-500,500-9999",
+    allPriceLabel = "Alle Preise",
+
+    goalsCsv = "Ränctalanítás,Pórustisztítás,Szőrtelenítés,Arcfeszesítés",
+    allGoalLabel = "Alle Ziele",
+
+    accentColor = "#A6807C",
+    textColor = "#3A3028",
+    mutedColor = "#7A7369",
+    bgColor = "#F7ECDF",
+    fillColor = "#EFDDD6",
+    radius = 4,
+    chipRadius = 8,
+
+    style,
+}: Props) {
+    const keywords = keywordsCsv
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean)
+    const categories = categoriesCsv
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean)
+    const goals = goalsCsv
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean)
+    const priceRanges = useMemo(
+        () => parsePriceRanges(priceRangesCsv),
+        [priceRangesCsv]
+    )
+
+    const [search, setSearch] = useState("")
+    const [category, setCategory] = useState("alle")
+    const [priceRange, setPriceRange] = useState("alle")
+    const [goal, setGoal] = useState("alle")
+    const [inputFocused, setInputFocused] = useState(false)
+    const searchWrapRef = useRef<HTMLDivElement>(null)
+
+    const dispatch = useCallback((state: FilterState) => {
+        const win = window as any
+        win.__iplFilterState = state
+        window.dispatchEvent(new CustomEvent("ipl-filter", { detail: state }))
+    }, [])
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            dispatch({ search, category, priceRange, goal })
+        }, 120)
+        return () => clearTimeout(t)
+    }, [search, category, priceRange, goal, dispatch])
+
+    useOutsideClose(inputFocused, searchWrapRef, () => setInputFocused(false))
+
+    const suggestions = useMemo(() => {
+        const q = search.trim().toLowerCase()
+        if (q.length === 0) return []
+        return keywords.filter((k) => {
+            const kl = k.toLowerCase()
+            if (kl === q) return false
+            if (kl.startsWith(q)) return true
+            return kl.split(/\s+/).some((w) => w.startsWith(q))
+        })
+    }, [search, keywords])
+
+    const showSuggestionDropdown =
+        showAutocomplete && inputFocused && suggestions.length > 0
+
+    const activeCount = [
+        category !== "alle",
+        priceRange !== "alle",
+        goal !== "alle",
+    ].filter(Boolean).length
+
+    const resetAll = () => {
+        setSearch("")
+        setCategory("alle")
+        setPriceRange("alle")
+        setGoal("alle")
+    }
+
+    return (
+        <div
+            style={{
+                width: "100%",
+                fontFamily: "'Inter', sans-serif",
+                ...style,
+            }}
+        >
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Montserrat:wght@300;400;500;600&display=swap');
+                .sfa-row {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 10px;
+                    width: 100%;
+                }
+                .sfa-search-inner { flex: 1 1 240px; min-width: 200px; position: relative; }
+            `}</style>
+
+            <div className="sfa-row">
+                {/* Kereső mező + autocomplete */}
+                <div ref={searchWrapRef} className="sfa-search-inner">
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            background: fillColor,
+                            border: "1px solid rgba(166,128,124,0.2)",
+                            borderRadius: radius,
+                            padding: "12px 16px",
+                            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+                            minWidth: 0,
+                        }}
+                    >
+                        <IconSearch color={mutedColor} />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={(e) => {
+                                setSearch(e.target.value)
+                                setInputFocused(true)
+                            }}
+                            onFocus={() => setInputFocused(true)}
+                            placeholder={searchPlaceholder}
+                            style={{
+                                flex: 1,
+                                minWidth: 0,
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                fontFamily: "'Inter', sans-serif",
+                                fontSize: 14,
+                                color: textColor,
+                            }}
+                        />
+                        {search !== "" && (
+                            <button
+                                type="button"
+                                onClick={() => setSearch("")}
+                                style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    padding: 4,
+                                    display: "flex",
+                                }}
+                                aria-label="Suche löschen"
+                            >
+                                <IconX color={mutedColor} />
+                            </button>
+                        )}
+                    </div>
+
+                    <AnimatePresence>
+                        {showSuggestionDropdown && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -6 }}
+                                transition={{ duration: 0.16 }}
+                                style={{
+                                    position: "absolute",
+                                    top: "calc(100% + 6px)",
+                                    left: 0,
+                                    right: 0,
+                                    background: "#FFFFFF",
+                                    borderRadius: radius,
+                                    border: "1px solid rgba(166,128,124,0.18)",
+                                    boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
+                                    overflow: "hidden",
+                                    zIndex: 30,
+                                }}
+                            >
+                                {suggestions.map((s) => (
+                                    <button
+                                        key={s}
+                                        type="button"
+                                        onMouseDown={(e) => {
+                                            e.preventDefault()
+                                            setSearch(s)
+                                            setInputFocused(false)
+                                        }}
+                                        style={{
+                                            width: "100%",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            padding: "11px 16px",
+                                            background: "transparent",
+                                            border: "none",
+                                            borderBottom:
+                                                "1px solid rgba(166,128,124,0.1)",
+                                            cursor: "pointer",
+                                            textAlign: "left",
+                                            fontSize: 13.5,
+                                            color: textColor,
+                                        }}
+                                    >
+                                        <IconSearch
+                                            color={mutedColor}
+                                            size={13}
+                                        />
+                                        {s}
+                                    </button>
+                                ))}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Kategória szűrő */}
+                <FilterDropdown
+                    label={allCategoryLabel}
+                    activeLabel={category !== "alle" ? category : null}
+                    activeValue={category}
+                    options={[
+                        { label: allCategoryLabel, value: "alle" },
+                        ...categories.map((c) => ({ label: c, value: c })),
+                    ]}
+                    onSelect={setCategory}
+                    accentColor={accentColor}
+                    textColor={textColor}
+                    mutedColor={mutedColor}
+                    fillColor={fillColor}
+                    radius={radius}
+                    chipRadius={chipRadius}
+                />
+
+                {/* Ár szűrő */}
+                <FilterDropdown
+                    label={allPriceLabel}
+                    activeLabel={
+                        priceRange !== "alle"
+                            ? priceRanges.find((r) => r.value === priceRange)
+                                  ?.label || null
+                            : null
+                    }
+                    activeValue={priceRange}
+                    options={[
+                        { label: allPriceLabel, value: "alle" },
+                        ...priceRanges.map((r) => ({
+                            label: r.label,
+                            value: r.value,
+                        })),
+                    ]}
+                    onSelect={setPriceRange}
+                    accentColor={accentColor}
+                    textColor={textColor}
+                    mutedColor={mutedColor}
+                    fillColor={fillColor}
+                    radius={radius}
+                    chipRadius={chipRadius}
+                />
+
+                {/* Cél / kulcsszó szűrő */}
+                <FilterDropdown
+                    label={allGoalLabel}
+                    activeLabel={goal !== "alle" ? goal : null}
+                    activeValue={goal}
+                    options={[
+                        { label: allGoalLabel, value: "alle" },
+                        ...goals.map((g) => ({ label: g, value: g })),
+                    ]}
+                    onSelect={setGoal}
+                    accentColor={accentColor}
+                    textColor={textColor}
+                    mutedColor={mutedColor}
+                    fillColor={fillColor}
+                    radius={radius}
+                    chipRadius={chipRadius}
+                />
+
+                {activeCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={resetAll}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "12px 14px",
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 12.5,
+                            color: mutedColor,
+                            textDecoration: "underline",
+                        }}
+                    >
+                        Zurücksetzen ({activeCount})
+                    </button>
+                )}
+            </div>
+        </div>
+    )
+}
+
+addPropertyControls(SearchFilterBarAdvanced, {
+    searchPlaceholder: {
+        type: ControlType.String,
+        title: "Kereső placeholder",
+        defaultValue: "Behandlung suchen …",
+    },
+    keywordsCsv: {
+        type: ControlType.String,
+        title: "[Autocomplete] Kulcsszavak (vesszővel)",
+        defaultValue: "Straffe Haut,Anti-Aging,Tiefenreinigung,Sensible Haut",
+        displayTextArea: true,
+    },
+    showAutocomplete: {
+        type: ControlType.Boolean,
+        title: "[Autocomplete] Bekapcsolva",
+        defaultValue: true,
+    },
+
+    categoriesCsv: {
+        type: ControlType.String,
+        title: "[Kategória] Lista (vesszővel)",
+        defaultValue:
+            "Klassische Kosmetikbehandlung,Medizinische Kosmetikbehandlung,QMS Medicosmetics,Spezial Kosmetikbehandlung,Haarentfernung IPL",
+        displayTextArea: true,
+    },
+    allCategoryLabel: {
+        type: ControlType.String,
+        title: "[Kategória] 'Összes' felirat",
+        defaultValue: "Alle Kategorien",
+    },
+
+    priceRangesCsv: {
+        type: ControlType.String,
+        title: "[Ár] Sávok (min-max,min-max,...)",
+        defaultValue: "0-100,100-200,200-500,500-9999",
+        description:
+            "Formátum: '0-100,100-200,...'. A 9999-es felső határ 'ab X CHF'-ként jelenik meg.",
+    },
+    allPriceLabel: {
+        type: ControlType.String,
+        title: "[Ár] 'Összes' felirat",
+        defaultValue: "Alle Preise",
+    },
+
+    goalsCsv: {
+        type: ControlType.String,
+        title: "[Cél] Lista (vesszővel)",
+        defaultValue:
+            "Ränctalanítás,Pórustisztítás,Szőrtelenítés,Arcfeszesítés",
+        displayTextArea: true,
+        description:
+            "A kezelés-komponenseken lévő 'goalsCsv' proppal kell egyezniük.",
+    },
+    allGoalLabel: {
+        type: ControlType.String,
+        title: "[Cél] 'Összes' felirat",
+        defaultValue: "Alle Ziele",
+    },
+
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent szín",
+        defaultValue: "#A6807C",
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg szín",
+        defaultValue: "#3A3028",
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Halvány szöveg",
+        defaultValue: "#7A7369",
+    },
+    bgColor: {
+        type: ControlType.Color,
+        title: "Háttér",
+        defaultValue: "#F7ECDF",
+    },
+    fillColor: {
+        type: ControlType.Color,
+        title: "Kereső/gomb fill",
+        defaultValue: "#EFDDD6",
+    },
+    radius: {
+        type: ControlType.Number,
+        title: "[Design] Lekerekítés",
+        defaultValue: 4,
+        min: 0,
+        max: 30,
+    },
+    chipRadius: {
+        type: ControlType.Number,
+        title: "[Design] Opció-sor lekerekítés",
+        defaultValue: 8,
+        min: 0,
+        max: 30,
+    },
+})
