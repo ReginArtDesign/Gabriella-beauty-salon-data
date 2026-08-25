@@ -1,0 +1,381 @@
+import { useState } from "react"
+import { addPropertyControls, ControlType } from "framer"
+
+const MENU_ITEMS = [
+    { label: "Home", href: "/" },
+    { label: "Über mich", href: "/uber-mich" },
+    { label: "Meine Dienstleistungen", href: "/dienstleistungen" },
+    {
+        label: "Produkte",
+        children: [
+            { label: "Dr. med. Christine Schrammek", href: "/schrammek" },
+            { label: "QMS Medicosmetics", href: "/qms" },
+        ],
+    },
+    { label: "Kontakt", href: "/kontakt" },
+]
+
+export default function MobileNav({
+    logoText = "Gabriella's Beauty",
+    ctaLabel = "Alle Behandlungen",
+    ctaHref = "/buchen",
+    bgColor = "#F7ECDF",
+    accentColor = "#A6807C",
+    textColor = "#3a3028",
+    mutedColor = "#7a7369",
+}: {
+    logoText?: string
+    ctaLabel?: string
+    ctaHref?: string
+    bgColor?: string
+    accentColor?: string
+    textColor?: string
+    mutedColor?: string
+}) {
+    const [open, setOpen] = useState(false)
+    const [prodOpen, setProdOpen] = useState(false)
+
+    const toggle = () => {
+        setOpen((v) => {
+            if (v) setProdOpen(false)
+            return !v
+        })
+    }
+
+    return (
+        <>
+            {/* Google Fonts */}
+            <link
+                href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap"
+                rel="stylesheet"
+            />
+
+            <nav
+                style={{
+                    fontFamily: "'Inter', sans-serif",
+                    background: bgColor,
+                    width: "100%",
+                    position: "relative",
+                    zIndex: 100,
+                    boxShadow: open
+                        ? "0 4px 24px rgba(60,40,30,0.08)"
+                        : "none",
+                    transition: "box-shadow 0.3s ease",
+                }}
+            >
+                {/* Top bar */}
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "0 20px",
+                        height: "56px",
+                    }}
+                >
+                    <a
+                        href="/"
+                        style={{
+                            fontSize: "15px",
+                            fontWeight: 500,
+                            color: textColor,
+                            letterSpacing: "0.03em",
+                            textDecoration: "none",
+                        }}
+                    >
+                        {logoText}
+                    </a>
+
+                    {/* Hamburger */}
+                    <button
+                        onClick={toggle}
+                        aria-label={open ? "Menü schließen" : "Menü öffnen"}
+                        aria-expanded={open}
+                        style={{
+                            width: 36,
+                            height: 36,
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 5,
+                            padding: 4,
+                            borderRadius: 8,
+                        }}
+                    >
+                        {/* Bar 1 */}
+                        <span
+                            style={{
+                                display: "block",
+                                width: open ? 22 : 22,
+                                height: 2.5,
+                                background: mutedColor,
+                                borderRadius: 99,
+                                transformOrigin: "center",
+                                transition:
+                                    "transform 0.32s cubic-bezier(.77,0,.18,1), opacity 0.22s ease",
+                                transform: open
+                                    ? "translateY(7.5px) rotate(45deg)"
+                                    : "none",
+                            }}
+                        />
+                        {/* Bar 2 */}
+                        <span
+                            style={{
+                                display: "block",
+                                width: 22,
+                                height: 2.5,
+                                background: mutedColor,
+                                borderRadius: 99,
+                                transition:
+                                    "opacity 0.22s ease, transform 0.22s ease",
+                                opacity: open ? 0 : 1,
+                                transform: open ? "scaleX(0)" : "scaleX(1)",
+                            }}
+                        />
+                        {/* Bar 3 */}
+                        <span
+                            style={{
+                                display: "block",
+                                width: 22,
+                                height: 2.5,
+                                background: mutedColor,
+                                borderRadius: 99,
+                                transformOrigin: "center",
+                                transition:
+                                    "transform 0.32s cubic-bezier(.77,0,.18,1), opacity 0.22s ease",
+                                transform: open
+                                    ? "translateY(-7.5px) rotate(-45deg)"
+                                    : "none",
+                            }}
+                        />
+                    </button>
+                </div>
+
+                {/* Dropdown panel */}
+                <div
+                    style={{
+                        overflow: "hidden",
+                        maxHeight: open ? 600 : 0,
+                        transition: "max-height 0.42s cubic-bezier(.77,0,.18,1)",
+                    }}
+                >
+                    <div
+                        style={{
+                            padding: "8px 0 20px",
+                            borderTop: `1px solid ${accentColor}30`,
+                        }}
+                    >
+                        {MENU_ITEMS.map((item) =>
+                            item.children ? (
+                                <div key={item.label}>
+                                    {/* Produkte toggle */}
+                                    <button
+                                        onClick={() =>
+                                            setProdOpen((v) => !v)
+                                        }
+                                        aria-expanded={prodOpen}
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            width: "100%",
+                                            padding: "13px 24px",
+                                            fontSize: 15,
+                                            fontWeight: 400,
+                                            color: prodOpen
+                                                ? accentColor
+                                                : textColor,
+                                            background: "none",
+                                            border: "none",
+                                            cursor: "pointer",
+                                            fontFamily: "'Inter', sans-serif",
+                                            textAlign: "left",
+                                            transition: "color 0.15s",
+                                        }}
+                                    >
+                                        {item.label}
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 14 14"
+                                            fill="none"
+                                            style={{
+                                                transition:
+                                                    "transform 0.28s cubic-bezier(.77,0,.18,1)",
+                                                transform: prodOpen
+                                                    ? "rotate(180deg)"
+                                                    : "rotate(0deg)",
+                                                color: accentColor,
+                                            }}
+                                        >
+                                            <path
+                                                d="M2.5 5L7 9.5L11.5 5"
+                                                stroke={accentColor}
+                                                strokeWidth="1.6"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        </svg>
+                                    </button>
+
+                                    {/* Submenu */}
+                                    <div
+                                        style={{
+                                            overflow: "hidden",
+                                            maxHeight: prodOpen ? 200 : 0,
+                                            transition:
+                                                "max-height 0.32s cubic-bezier(.77,0,.18,1)",
+                                        }}
+                                    >
+                                        {item.children.map((sub) => (
+                                            <a
+                                                key={sub.label}
+                                                href={sub.href}
+                                                style={{
+                                                    display: "block",
+                                                    padding: "11px 24px 11px 40px",
+                                                    fontSize: 14,
+                                                    color: "#6b5f58",
+                                                    textDecoration: "none",
+                                                    fontFamily:
+                                                        "'Inter', sans-serif",
+                                                    transition: "color 0.15s",
+                                                }}
+                                                onMouseEnter={(e) =>
+                                                    ((
+                                                        e.target as HTMLElement
+                                                    ).style.color = accentColor)
+                                                }
+                                                onMouseLeave={(e) =>
+                                                    ((
+                                                        e.target as HTMLElement
+                                                    ).style.color = "#6b5f58")
+                                                }
+                                            >
+                                                {sub.label}
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <a
+                                    key={item.label}
+                                    href={item.href}
+                                    style={{
+                                        display: "block",
+                                        padding: "13px 24px",
+                                        fontSize: 15,
+                                        fontWeight: 400,
+                                        color: textColor,
+                                        textDecoration: "none",
+                                        fontFamily: "'Inter', sans-serif",
+                                        transition: "color 0.15s",
+                                    }}
+                                    onMouseEnter={(e) =>
+                                        ((
+                                            e.target as HTMLElement
+                                        ).style.color = accentColor)
+                                    }
+                                    onMouseLeave={(e) =>
+                                        ((
+                                            e.target as HTMLElement
+                                        ).style.color = textColor)
+                                    }
+                                >
+                                    {item.label}
+                                </a>
+                            )
+                        )}
+
+                        {/* Divider */}
+                        <div
+                            style={{
+                                height: 1,
+                                background: `${accentColor}25`,
+                                margin: "8px 20px",
+                            }}
+                        />
+
+                        {/* CTA */}
+                        <div style={{ padding: "10px 20px 4px" }}>
+                            <a
+                                href={ctaHref}
+                                style={{
+                                    display: "block",
+                                    width: "100%",
+                                    padding: "13px 20px",
+                                    background: accentColor,
+                                    color: "#fff",
+                                    fontFamily: "'Inter', sans-serif",
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    letterSpacing: "0.04em",
+                                    textAlign: "center",
+                                    border: "none",
+                                    borderRadius: 10,
+                                    cursor: "pointer",
+                                    textDecoration: "none",
+                                    transition:
+                                        "background 0.18s, transform 0.12s",
+                                    boxSizing: "border-box",
+                                }}
+                                onMouseEnter={(e) =>
+                                    ((e.target as HTMLElement).style.background =
+                                        "#8f6d69")
+                                }
+                                onMouseLeave={(e) =>
+                                    ((e.target as HTMLElement).style.background =
+                                        accentColor)
+                                }
+                            >
+                                {ctaLabel}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+        </>
+    )
+}
+
+addPropertyControls(MobileNav, {
+    logoText: {
+        type: ControlType.String,
+        title: "Logo szöveg",
+        defaultValue: "Gabriella's Beauty",
+    },
+    ctaLabel: {
+        type: ControlType.String,
+        title: "CTA felirat",
+        defaultValue: "Alle Behandlungen",
+    },
+    ctaHref: {
+        type: ControlType.String,
+        title: "CTA link",
+        defaultValue: "/buchen",
+    },
+    bgColor: {
+        type: ControlType.Color,
+        title: "Háttér",
+        defaultValue: "#F7ECDF",
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent",
+        defaultValue: "#A6807C",
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg",
+        defaultValue: "#3a3028",
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Hamburger",
+        defaultValue: "#7a7369",
+    },
+})
