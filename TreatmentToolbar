@@ -485,7 +485,7 @@ export default function TreatmentToolbar({
                     min-width: 0;
                     max-width: 420px;
                     height: ${fieldHeight}px;
-                    padding: 0 14px 0 16px;
+                    padding: 0 10px 0 16px;
                     background: ${fieldBg};
                     border: 1px solid ${borderColor};
                     border-radius: ${radius}px;
@@ -506,6 +506,11 @@ export default function TreatmentToolbar({
                     font-size: 15px;
                     font-weight: 400;
                     color: ${textColor};
+                }
+                .${uid} .tt-input::-webkit-search-cancel-button, 
+                .${uid} .tt-input::-webkit-search-decoration {
+                    -webkit-appearance: none;
+                    appearance: none;
                 }
                 .${uid} .tt-input::placeholder {
                     color: ${mutedColor};
