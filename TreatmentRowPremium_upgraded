@@ -1,0 +1,1911 @@
+// ============ TreatmentRowPremium_upgraded.tsx (TELJES — Desktop layout + szöveges gombok frissítéssel) ============
+import * as React from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
+import { addPropertyControls, ControlType } from "framer"
+import { motion, AnimatePresence } from "framer-motion"
+
+const TOKENS = {
+    cream: "#F7ECDF",
+    ink: "#6B4D57",
+    mauve: "#6B4D57",
+    muted: "#7A7369",
+    brass: "#6b4d57",
+    fontHeading: "'Montserrat', sans-serif",
+    fontBody: "'Inter', sans-serif",
+}
+
+const EASE = [0.16, 1, 0.3, 1]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAFFT ELŐMELEGÍTÉS (warm-up)
+//
+// A Trafft foglalóoldal 211 kérésből és ~1,7 MB-ból áll, a szerverük válaszideje
+// ~690 ms, a teljes betöltés ~6,3 s. Ezen a kódunk nem tud gyorsítani — viszont
+// a 178 statikus fájljuk `public, max-age=14400` fejléccel jön, tehát 4 órára
+// gyorsítótárazható.
+//
+// Ezért amikor a látogató RÁHÚZZA az egeret egy foglalás gombra (mobilon:
+// megérinti), 200 ms késleltetés után elindítunk EGY rejtett iframe-et. Mire
+// tényleg rákattint, a statikus fájlok már a cache-ben vannak.
+//
+// FONTOS: ez modul szintű, tehát oldalanként EGYETLEN egyszer fut le, akkor is,
+// ha 16 kezelés-sor van az oldalon — mind ugyanazokat a Trafft fájlokat tölti,
+// így egy előmelegítés mindegyiknek jó. Aki nem mozdul foglalás felé, annak
+// semmi nem töltődik le.
+let trafftWarmed = false
+function warmTrafft(url: string) {
+    if (trafftWarmed) return
+    if (typeof document === "undefined" || !url) return
+    trafftWarmed = true
+    const frame = document.createElement("iframe")
+    frame.src = url
+    frame.setAttribute("aria-hidden", "true")
+    frame.setAttribute("tabindex", "-1")
+    frame.style.cssText =
+        "position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;border:0;pointer-events:none"
+    document.body.appendChild(frame)
+    // 25 mp után elengedjük — a letöltött fájlok a böngésző cache-ében maradnak
+    window.setTimeout(() => {
+        try {
+            frame.remove()
+        } catch (e) {}
+    }, 25000)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VÁLTOZÁS (1/5) — A CSS kikerült a komponens törzséből modul szintre.
+//
+// Előtte a teljes CSS-blokk a return-ön belül, minden példánynál újra
+// legenerálódott. Az /alle-behandlungen oldalon ez 16 példányt jelent, tehát
+// 16 azonos <style> elemet és 16 azonos @import-ot a HTML-ben.
+//
+// A CSS szövege betűre változatlan. Csak egyszer épül fel, a modul betöltésekor.
+// ─────────────────────────────────────────────────────────────────────────────
+const TRP_CSS = `
+
+                /* ── DESKTOP SOR — levegősebb arányok ── */
+                .trp-row {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 1.375rem;
+                    width: 100%;
+                    box-sizing: border-box;
+                    padding: 1.125rem 1.5rem 1.125rem 1.375rem;
+                    background: #FFFFFF;
+                    border: 1px solid rgba(166,128,124,0.16);
+                    border-radius: 6px;
+                    /* A kinyíló kép a sor széléig fut ki — a lekerekített
+                       sarkokat ez vágja vissza. */
+                    overflow: hidden;
+                    transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+                    cursor: pointer;
+                }
+                .trp-row:hover {
+                    box-shadow: 0 10px 26px rgba(58,48,40,0.08);
+                    transform: translateY(-1px);
+                    border-color: rgba(166,128,124,0.3);
+                }
+                .trp-marker {
+                    position: absolute;
+                    left: 0;
+                    top: 10%;
+                    height: 80%;
+                    width: 3px;
+                    border-radius: 3px;
+                    background: ${TOKENS.brass};
+                    transform-origin: center;
+                }
+                /* ── A BÉLYEGKÉP KINYÍLÁSA ──
+                   Zárva 84×84 a sor bal szélén. Nyitáskor UGYANEZ az elem
+                   szélesedik ki a sor teljes szélességére és kap magasságot —
+                   nem egy második kép jelenik meg, hanem ez nő meg.
+                   A negatív margó viszi ki a sor paddingja alól, hogy tényleg
+                   a kártya széléig érjen; a név / ár / gombok alá csúsznak.  */
+                .trp-thumb-wrap {
+                    position: relative;
+                    flex: 0 0 84px;
+                    transition:
+                        flex-basis 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                        margin 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+                .trp-thumb {
+                    width: 100%;
+                    height: 84px;
+                    border-radius: 6px;
+                    overflow: hidden;
+                    transition:
+                        height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                        border-radius 0.35s ease;
+                }
+                .trp-thumb img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+                /* A flex-basis a sor BELSŐ szélességéhez igazodik, ezért a két
+                   oldalsó padding értékét hozzá kell adni, különben a kép nem ér
+                   el a kártya széléig. */
+                .trp-row.is-open .trp-thumb-wrap {
+                    flex-basis: calc(100% + 1.5rem + 1.375rem);
+                    margin: -1.125rem -1.5rem 1rem -1.375rem;
+                }
+                /* Sortörés: a .trp-info min-width:0-val nullára is
+                   összenyomható, ezért magától felcsúszna a kép mellé. Ez a
+                   nulla magasságú elem kényszeríti új sorba. */
+                .trp-break { display: none; }
+                .trp-row.is-open { row-gap: 0; }
+                .trp-row.is-open .trp-break {
+                    display: block;
+                    flex: 0 0 100%;
+                    height: 0;
+                    margin: 0;
+                }
+                .trp-row.is-open .trp-thumb {
+                    height: clamp(220px, 26vw, 420px);
+                    border-radius: 0;
+                }
+                /* Kinyitva a kép kattintható: teljes nézetben nyílik meg. */
+                .trp-row.is-open .trp-thumb,
+                .trp-card-image-wrap.is-zoomable {
+                    cursor: zoom-in;
+                }
+                /* Diszkrét nagyító-jelzés a kép sarkában — enélkül senki nem
+                   találná ki, hogy a kép kattintható. */
+                .trp-zoom-hint {
+                    position: absolute;
+                    right: 12px;
+                    bottom: 12px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 99px;
+                    background: rgba(255,255,255,0.9);
+                    border: 1px solid rgba(166,128,124,0.25);
+                    box-shadow: 0 4px 14px rgba(58,48,40,0.18);
+                    backdrop-filter: blur(4px);
+                    -webkit-backdrop-filter: blur(4px);
+                    pointer-events: none;
+                    z-index: 2;
+                    transition: background 0.2s ease, transform 0.2s ease;
+                }
+                .trp-row.is-open .trp-thumb-wrap:hover .trp-zoom-hint {
+                    background: #FFFFFF;
+                    transform: scale(1.06);
+                }
+
+                /* ── TELJES KÉP NÉZET (lightbox) ── */
+                .trp-lightbox {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 100000;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 24px;
+                    box-sizing: border-box;
+                    cursor: zoom-out;
+                }
+                .trp-lightbox-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(44,34,31,0.82);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                }
+                .trp-lightbox-img {
+                    position: relative;
+                    max-width: min(1400px, 92vw);
+                    max-height: 86vh;
+                    width: auto;
+                    height: auto;
+                    /* contain, nem cover: a teljes kép látszik, nem vágjuk le. */
+                    object-fit: contain;
+                    border-radius: 8px;
+                    box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+                    cursor: default;
+                }
+                .trp-lightbox-caption {
+                    position: fixed;
+                    left: 50%;
+                    bottom: 22px;
+                    transform: translateX(-50%);
+                    max-width: 80vw;
+                    text-align: center;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.8125rem;
+                    font-weight: 300;
+                    letter-spacing: 0.01em;
+                    color: rgba(255,255,255,0.82);
+                    pointer-events: none;
+                }
+                .trp-lightbox-close {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 99px;
+                    border: 1px solid rgba(255,255,255,0.28);
+                    background: rgba(255,255,255,0.1);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                }
+                .trp-lightbox-close:hover {
+                    background: rgba(255,255,255,0.22);
+                }
+                @media (max-width: 600px) {
+                    .trp-lightbox { padding: 12px; }
+                    .trp-lightbox-img { max-width: 96vw; max-height: 80vh; }
+                    .trp-zoom-hint { width: 30px; height: 30px; right: 10px; bottom: 10px; }
+                }
+                /* Nyitva a szalag becsúszik a kép sarkába, hogy a sor
+                   overflow-ja ne vágja le. */
+                .trp-row.is-open .trp-badge-ribbon {
+                    top: 12px;
+                    right: 12px;
+                }
+                .trp-badge-ribbon {
+                    position: absolute;
+                    top: -6px;
+                    right: -6px;
+                    background: ${TOKENS.mauve};
+                    color: #FFFFFF;
+                    font-family: 'Montserrat', sans-serif;
+                    font-size: 8px;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    padding: 3px 6px;
+                    border-radius: 99px;
+                    box-shadow: 0 2px 6px rgba(166,128,124,0.35);
+                    white-space: nowrap;
+                    z-index: 2;
+                }
+                .trp-info {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .trp-eyebrow-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin-bottom: 3px;
+                    flex-wrap: wrap;
+                }
+                /* csak a desktop soron kap egy hajszállal több levegőt */
+                .trp-info .trp-eyebrow-row {
+                    margin-bottom: 5px;
+                }
+                .trp-category {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    font-family: 'Montserrat', sans-serif;
+                    font-size: 9.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.14em;
+                    text-transform: uppercase;
+                    color: ${TOKENS.mauve};
+                    opacity: 0.85;
+                }
+                .trp-badge-inline {
+                    display: inline-flex;
+                    align-items: center;
+                    font-family: 'Montserrat', sans-serif;
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: ${TOKENS.mauve};
+                    background: rgba(166,128,124,0.1);
+                    border: 1px solid rgba(166,128,124,0.22);
+                    padding: 2px 8px;
+                    border-radius: 99px;
+                }
+                .trp-title {
+                    margin: 0;
+                    font-family: 'Montserrat', sans-serif;
+                    font-weight: 400;
+                    color: ${TOKENS.ink};
+                    line-height: 1.25;
+                    word-break: break-word;
+                    font-size: clamp(1.0625rem, 2.2vw, 1.1875rem);
+                }
+                .trp-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 1.25rem;
+                    flex-shrink: 0;
+                }
+                .trp-price {
+                    font-family: ${TOKENS.fontHeading};
+                    font-size: 1.0625rem;
+                    font-weight: 500;
+                    color: ${TOKENS.ink};
+                    white-space: nowrap;
+                }
+                .trp-btn-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.625rem;
+                }
+
+                /* ── DESKTOP SZÖVEGES GOMBOK ── */
+                .trp-desk-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 7px;
+                    padding: 0.6875rem 1.125rem;
+                    border-radius: 4px;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.8125rem;
+                    font-weight: 500;
+                    letter-spacing: 0.01em;
+                    white-space: nowrap;
+                    cursor: pointer;
+                    box-sizing: border-box;
+                    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+                }
+                .trp-desk-details {
+                    min-width: 116px;
+                    background: transparent;
+                    color: ${TOKENS.ink};
+                    border: 1px solid rgba(166,128,124,0.28);
+                }
+                .trp-desk-details:hover {
+                    background: rgba(166,128,124,0.08);
+                    border-color: rgba(166,128,124,0.5);
+                }
+                .trp-desk-book {
+                    min-width: 116px;
+                    background: ${TOKENS.mauve};
+                    color: #FFFFFF;
+                    border: 1px solid ${TOKENS.mauve};
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+                }
+                .trp-desk-book:hover {
+                    background: #8F6D69;
+                    border-color: #8F6D69;
+                    box-shadow: 0 8px 24px rgba(166,128,124,0.25);
+                }
+
+                .trp-bullets {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin: 0 0 1rem 0;
+                }
+                .trp-bullet-item {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 8px;
+                    font-size: 0.8125rem;
+                    color: ${TOKENS.ink};
+                    line-height: 1.45;
+                }
+
+                /* ── LENYÍLÓ RÉSZLETEK PANEL ──
+                   A szöveges tartalom külön belső dobozban, hogy a panel
+                   kerete és a térközei függetlenül állíthatók legyenek.      */
+                .trp-detail {
+                    margin-top: 0.25rem;
+                    background: #FAF6F0;
+                    border: 1px solid rgba(166,128,124,0.14);
+                    border-radius: 4px;
+                    overflow: hidden;
+                    box-sizing: border-box;
+                }
+                .trp-detail-body {
+                    padding: 1.125rem 1.25rem 1.25rem;
+                    box-sizing: border-box;
+                }
+
+                /* ── KESKENYEBB DESKTOP / TABLET (601–900px): kompaktabb, de ugyanaz a szerkezet ── */
+                @media (min-width: 601px) and (max-width: 900px) {
+                    .trp-row {
+                        gap: 1rem;
+                        padding: 1rem 1.125rem;
+                    }
+                    .trp-thumb-wrap {
+                        flex: 0 0 68px;
+                    }
+                    .trp-thumb {
+                        height: 68px;
+                    }
+                    .trp-actions {
+                        gap: 0.875rem;
+                    }
+                    .trp-desk-btn {
+                        padding: 0.625rem 0.875rem;
+                        font-size: 0.78125rem;
+                    }
+                    .trp-desk-details,
+                    .trp-desk-book {
+                        min-width: 0;
+                    }
+                    .trp-row.is-open .trp-thumb-wrap {
+                        flex-basis: calc(100% + 2.25rem);
+                        margin: -1rem -1.125rem 0.875rem -1.125rem;
+                    }
+                    .trp-row.is-open .trp-thumb {
+                        height: clamp(180px, 30vw, 300px);
+                    }
+                    .trp-detail-body {
+                        padding: 1rem 1.125rem 1.125rem;
+                    }
+                }
+
+                /* ── MOBIL: FÜGGŐLEGES KÁRTYA (kép felül, alatta név / details / booking) ── */
+                .trp-card {
+                    position: relative;
+                    display: flex;
+                    flex-direction: column;
+                    width: 100%;
+                    box-sizing: border-box;
+                    background: #FFFFFF;
+                    border: 1px solid rgba(166,128,124,0.16);
+                    border-radius: 8px;
+                    overflow: hidden;
+                    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+                }
+                .trp-card-image-wrap {
+                    position: relative;
+                    width: 100%;
+                    aspect-ratio: 4 / 3;
+                    background: ${TOKENS.cream};
+                    flex-shrink: 0;
+                }
+                .trp-card-image {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+                .trp-card-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.375rem;
+                    padding: 0.875rem 1rem 1rem;
+                }
+                .trp-card-title {
+                    margin: 0;
+                    font-family: 'Montserrat', sans-serif;
+                    font-weight: 400;
+                    font-size: 1.0625rem;
+                    line-height: 1.25;
+                    color: ${TOKENS.ink};
+                }
+                .trp-card-meta {
+                    font-size: 0.8125rem;
+                    color: ${TOKENS.muted};
+                    font-weight: 300;
+                }
+                .trp-card-meta strong {
+                    font-family: 'Montserrat', sans-serif;
+                    font-weight: 500;
+                    color: ${TOKENS.ink};
+                }
+                .trp-card-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    margin-top: 0.5rem;
+                }
+                .trp-card-details-btn {
+                    flex: 1;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 0.6875rem 0.75rem;
+                    background: rgba(166,128,124,0.08);
+                    color: ${TOKENS.ink};
+                    border: 1px solid rgba(166,128,124,0.2);
+                    border-radius: 4px;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.8125rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                }
+                .trp-card-book-btn {
+                    flex: 1;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 0.6875rem 0.75rem;
+                    background: ${TOKENS.mauve};
+                    color: #FFFFFF;
+                    border: none;
+                    border-radius: 4px;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.8125rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                }
+                @media (max-width: 600px) {
+                    .trp-row {
+                        flex-wrap: wrap;
+                        align-items: flex-start;
+                        padding: 0.875rem 1rem;
+                    }
+                    .trp-actions {
+                        width: 100%;
+                        justify-content: space-between;
+                        margin-top: 0.25rem;
+                        padding-left: 0;
+                    }
+                    .trp-detail-body {
+                        padding: 1rem 1rem 1.125rem;
+                    }
+                }
+
+                /* ── FOGLALÁSI NAPTÁR VÁZLAT (skeleton) ──
+                   Amíg a Trafft iframe betölt, ez a réteg mutatja a naptár
+                   körvonalát, hogy ne üres háttér fogadja a látogatót.
+                   Az iframe onLoad eseményére tűnik el.                      */
+                @keyframes trpShimmer {
+                    0%   { background-position: -420px 0; }
+                    100% { background-position: 420px 0; }
+                }
+                .trp-skel-wrap {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                    padding: 24px 22px;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    pointer-events: none;
+                }
+                .trp-skel {
+                    border-radius: 6px;
+                    background: #EFE6DC;
+                    background-image: linear-gradient(
+                        90deg,
+                        rgba(255,255,255,0) 0%,
+                        rgba(255,255,255,0.65) 50%,
+                        rgba(255,255,255,0) 100%
+                    );
+                    background-size: 420px 100%;
+                    background-repeat: no-repeat;
+                    animation: trpShimmer 1.4s ease-in-out infinite;
+                }
+                /* A vékony sávok soha ne zsugorodjanak nullára: ha a modal
+                   alacsonyabb a vázlatnál, inkább a nap-rács vágódjon le,
+                   mert a cím és az időpont-sávok hordozzák a jelentést.     */
+                .trp-skel-wrap > * { flex-shrink: 0; }
+                .trp-skel-title  { height: 20px; width: 52%; }
+                .trp-skel-sub    { height: 12px; width: 34%; margin-top: -6px; }
+                .trp-skel-divider {
+                    height: 1px;
+                    background: #EAE3D9;
+                    margin: 4px 0 2px;
+                }
+                .trp-skel-weekdays {
+                    display: grid;
+                    grid-template-columns: repeat(7, 1fr);
+                    gap: 8px;
+                }
+                .trp-skel-weekdays .trp-skel { height: 10px; }
+                /* A naptár napjait EGYETLEN téglalap jelöli — a korábbi
+                   28 korong túl hangsúlyos volt, elvonta a figyelmet.
+                   Ez az egyetlen elem, ami helyszűkében enged: összébb
+                   húzódik ahelyett, hogy mindent összenyomna.              */
+                .trp-skel-wrap > .trp-skel-calendar {
+                    flex: 1 1 auto;
+                    min-height: 96px;
+                    border-radius: 8px;
+                }
+                .trp-skel-slots {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 10px;
+                    margin-top: 6px;
+                }
+                .trp-skel-slots .trp-skel { height: 38px; }
+                @media (max-width: 600px) {
+                    .trp-skel-wrap { padding: 18px 16px; gap: 12px; }
+                    .trp-skel-slots { grid-template-columns: repeat(2, 1fr); }
+                }
+            `
+
+function useMediaQuery(query: string) {
+    const [matches, setMatches] = useState(false)
+    // ─────────────────────────────────────────────────────────────────────────
+    // VÁLTOZÁS (2/5) — a függőségi tömbből kikerült a `matches`.
+    //
+    // Előtte: minden méretváltásnál lefutott a cleanup + újra a setup, tehát
+    // a listener le- és újra-regisztrálódott. A kezdőérték (false) és a
+    // viselkedés változatlan — csak nem építi újra magát feleslegesen.
+    // ─────────────────────────────────────────────────────────────────────────
+    useEffect(() => {
+        const media = window.matchMedia(query)
+        const update = () => setMatches(media.matches)
+        update()
+        media.addEventListener("change", update)
+        return () => media.removeEventListener("change", update)
+    }, [query])
+    return matches
+}
+
+function resolveSrc(img: unknown): string {
+    if (!img) return ""
+    if (typeof img === "string") return img
+    if (typeof img === "object" && img !== null && "src" in img) {
+        const s = (img as { src?: unknown }).src
+        return typeof s === "string" ? s : ""
+    }
+    return ""
+}
+
+function parsePriceNumber(priceStr: string): number {
+    const match = (priceStr || "").match(/\d+/)
+    return match ? parseInt(match[0], 10) : 0
+}
+
+function useFilterVisibility(
+    category: string,
+    name: string,
+    description: string,
+    priceSingle: string,
+    goalsCsv: string,
+    searchKeywordsCsv: string
+) {
+    const [visible, setVisible] = useState(true)
+
+    useEffect(() => {
+        const evaluate = (state: {
+            search?: string
+            category?: string
+            priceRange?: string
+            goal?: string
+        }) => {
+            const cat = state.category || "alle"
+            const catOk =
+                !cat ||
+                cat === "alle" ||
+                (category || "").toLowerCase() === cat.toLowerCase()
+
+            const q = (state.search || "").trim().toLowerCase()
+            const goalsList = (goalsCsv || "")
+                .split(",")
+                .map((g) => g.trim().toLowerCase())
+                .filter(Boolean)
+            const searchKeywordsMatch = (searchKeywordsCsv || "")
+                .toLowerCase()
+                .includes(q)
+            const searchOk =
+                q === "" ||
+                (name || "").toLowerCase().includes(q) ||
+                (description || "").toLowerCase().includes(q) ||
+                goalsList.some((g) => g.includes(q) || q.includes(g)) ||
+                searchKeywordsMatch
+
+            const priceRange = state.priceRange || "alle"
+            let priceOk = true
+            if (priceRange !== "alle") {
+                const [minS, maxS] = priceRange.split("-")
+                const min = parseInt(minS, 10) || 0
+                const max = parseInt(maxS, 10) || 999999
+                const price = parsePriceNumber(priceSingle)
+                priceOk = price >= min && price <= max
+            }
+
+            const goal = state.goal || "alle"
+            let goalOk = true
+            if (goal !== "alle") {
+                const goals = (goalsCsv || "")
+                    .split(",")
+                    .map((g) => g.trim().toLowerCase())
+                    .filter(Boolean)
+                goalOk = goals.includes(goal.toLowerCase())
+            }
+
+            setVisible(catOk && searchOk && priceOk && goalOk)
+        }
+
+        const win = window as any
+        if (win.__iplFilterState) evaluate(win.__iplFilterState)
+
+        const handler = (e: Event) => {
+            evaluate((e as CustomEvent).detail || {})
+        }
+        window.addEventListener("ipl-filter", handler)
+        return () => window.removeEventListener("ipl-filter", handler)
+    }, [category, name, description, priceSingle, goalsCsv, searchKeywordsCsv])
+
+    return visible
+}
+
+function IconArrowUpRight({
+    color,
+    size = 15,
+}: {
+    color: string
+    size?: number
+}) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0 }}
+        >
+            <path d="M7 17L17 7M7 7h10v10" />
+        </svg>
+    )
+}
+
+function IconChevron({
+    color,
+    open,
+    size = 15,
+}: {
+    color: string
+    open: boolean
+    size?: number
+}) {
+    return (
+        <motion.svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: 0.3, ease: EASE }}
+            style={{ flexShrink: 0 }}
+        >
+            <path d="M6 9l6 6 6-6" />
+        </motion.svg>
+    )
+}
+
+function IconExpand({ color, size = 16 }: { color: string; size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0 }}
+        >
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+        </svg>
+    )
+}
+
+function IconClose({ color, size = 20 }: { color: string; size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+            <path
+                d="M18 6L6 18M6 6L18 18"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+function IconSparkle({ color, size = 11 }: { color: string; size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            style={{ flexShrink: 0 }}
+        >
+            <path
+                d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z"
+                fill={color}
+            />
+        </svg>
+    )
+}
+
+function IconCheckCircle({
+    color,
+    size = 16,
+}: {
+    color: string
+    size?: number
+}) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            style={{ flexShrink: 0, marginTop: 2 }}
+        >
+            <circle
+                cx="12"
+                cy="12"
+                r="10"
+                fill={`${color}15`}
+                stroke={color}
+                strokeWidth="1.5"
+            />
+            <path
+                d="M8.5 12.5L10.8 14.8L15.8 9.8"
+                stroke={color}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    )
+}
+
+interface TreatmentRowPremiumProps {
+    name?: string
+    description?: string
+    thumbnail?: any
+    priceSingle?: string
+    priceAbo3?: string
+    priceAbo6?: string
+    duration?: string
+    category?: string
+    badgeText?: string
+    bullet1?: string
+    bullet2?: string
+    bullet3?: string
+    bullet4?: string
+    goalsCsv?: string
+    searchKeywordsCsv?: string
+    enableFilterResponse?: boolean
+    bookingUrl?: string
+    ctaLabel?: string
+    modalBgColor?: string
+    expandImageOnOpen?: boolean
+    enableLightbox?: boolean
+    style?: React.CSSProperties
+}
+
+export default function TreatmentRowPremium({
+    name = "Diamant-Mikrodermabrasion",
+    description = "Erleben Sie massgeschneiderte Hautpflege mit sofort sichtbarem Ergebnis.",
+    thumbnail,
+    priceSingle = "165 CHF",
+    priceAbo3 = "419 CHF",
+    priceAbo6 = "655 CHF",
+    duration = "75 Min",
+    category = "",
+    badgeText = "",
+    bullet1 = "",
+    bullet2 = "",
+    bullet3 = "",
+    bullet4 = "",
+    goalsCsv = "",
+    searchKeywordsCsv = "",
+    enableFilterResponse = true,
+    bookingUrl = "https://gabriellasbeautysalon.trafft.com/booking",
+    ctaLabel = "Jetzt Termin buchen",
+    modalBgColor = "#FFFFFF",
+    expandImageOnOpen = true,
+    enableLightbox = true,
+    style,
+}: TreatmentRowPremiumProps) {
+    const isMobile = useMediaQuery("(max-width: 600px)")
+    const [isOpen, setIsOpen] = useState(false)
+    const [isBookingOpen, setIsBookingOpen] = useState(false)
+    const [isImageOpen, setIsImageOpen] = useState(false)
+    const rowRef = useRef<HTMLDivElement>(null)
+
+    const filterVisible = useFilterVisibility(
+        enableFilterResponse ? category : "",
+        name,
+        description,
+        priceSingle,
+        goalsCsv,
+        searchKeywordsCsv
+    )
+
+    const thumbnailSrc = resolveSrc(thumbnail)
+
+    // A bélyegkép kinyílása csak desktopon/tableten értelmes: mobilon a kártya
+    // teteje ELEVE egy nagy kép, ott nincs mit kinyitni.
+    const imageExpands = expandImageOnOpen && !isMobile && Boolean(thumbnailSrc)
+
+    const bullets = useMemo(
+        () =>
+            [bullet1, bullet2, bullet3, bullet4].filter((b) =>
+                Boolean(b && b.trim() !== "")
+            ),
+        [bullet1, bullet2, bullet3, bullet4]
+    )
+
+    const finalBookingUrl = useMemo(() => {
+        if (!bookingUrl || bookingUrl.trim() === "") return ""
+        try {
+            const separator = bookingUrl.includes("?") ? "&" : "?"
+            return `${bookingUrl}${separator}service=${encodeURIComponent(
+                name.trim()
+            )}`
+        } catch {
+            return bookingUrl
+        }
+    }, [bookingUrl, name])
+
+    // Az iframe betöltési állapota — amíg false, a naptár-vázlat látszik
+    const [bookingLoaded, setBookingLoaded] = useState(false)
+
+    // Előmelegítés: 200 ms rááltás után indul, hogy a véletlen egérmozgás
+    // ne indítson letöltést. Elhagyáskor töröljük az időzítőt.
+    const warmTimer = useRef<number | null>(null)
+    const startWarm = () => {
+        if (warmTimer.current !== null) return
+        warmTimer.current = window.setTimeout(() => {
+            warmTrafft(finalBookingUrl)
+        }, 200)
+    }
+    const cancelWarm = () => {
+        if (warmTimer.current !== null) {
+            window.clearTimeout(warmTimer.current)
+            warmTimer.current = null
+        }
+    }
+    useEffect(() => () => cancelWarm(), [])
+
+    // Minden nyitáskor újra a vázlattal indulunk. Biztonsági időzítő: ha az
+    // iframe onLoad eseménye valamiért elmaradna (hálózati hiba), 15 mp után
+    // akkor is elrejtjük a vázlatot, hogy ne ragadjon be.
+    useEffect(() => {
+        if (!isBookingOpen) return
+        setBookingLoaded(false)
+        const failSafe = window.setTimeout(() => setBookingLoaded(true), 15000)
+        return () => window.clearTimeout(failSafe)
+    }, [isBookingOpen])
+
+    // A teljes kép nézet megnyitása. A stopPropagation azért kell, mert a
+    // desktop soron a kattintás egyébként össze-/kinyitná a részleteket.
+    const openImage = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsImageOpen(true)
+    }
+
+    // Billentyűzetes megnyitás: a kép-doboz role="button", tehát Enter és
+    // Space is működjön rajta.
+    const openImageOnKey = (e: React.KeyboardEvent) => {
+        if (e.key !== "Enter" && e.key !== " ") return
+        e.preventDefault()
+        e.stopPropagation()
+        setIsImageOpen(true)
+    }
+
+    const handleInstantBook = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsBookingOpen(true)
+    }
+
+    // Esc-re zárjon, és amíg nyitva van, ne görögjön a háttér.
+    useEffect(() => {
+        if (!isImageOpen) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setIsImageOpen(false)
+        }
+        const prev = document.body.style.overflow
+        document.body.style.overflow = "hidden"
+        window.addEventListener("keydown", onKey)
+        return () => {
+            document.body.style.overflow = prev
+            window.removeEventListener("keydown", onKey)
+        }
+    }, [isImageOpen])
+
+    const toggleOpen = (e: React.MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsOpen((v) => !v)
+    }
+
+    if (!filterVisible) {
+        return (
+            <div
+                data-ipl-cat={category || undefined}
+                style={{ display: "none" }}
+            />
+        )
+    }
+
+    return (
+        <div
+            data-ipl-cat={category || undefined}
+            style={{
+                width: "100%",
+                fontFamily: TOKENS.fontBody,
+                marginBottom: isMobile ? "0.625rem" : "0.75rem",
+                boxSizing: "border-box",
+                ...style,
+            }}
+        >
+            {/*
+                VÁLTOZÁS (3/5) — a <style> tartalma már nem React gyerek-szövegként
+                kerül be, hanem dangerouslySetInnerHTML-lel, + suppressHydrationWarning.
+
+                Ez a React #425 hiba oka: a böngésző normalizálja a CSS szöveget,
+                így a szerveren generált és a kliensen várt tartalom nem egyezik,
+                mire a React eldobja a szerver HTML-jét és újrarendereli az egész
+                blokkot. A megjelenített CSS pontosan ugyanaz marad.
+            */}
+            <style
+                dangerouslySetInnerHTML={{ __html: TRP_CSS }}
+                suppressHydrationWarning
+            />
+
+            {isMobile ? (
+                // ── MOBIL NÉZET: függőleges kártya — felül kép, alul név / details / booking gomb ──
+                <motion.div
+                    ref={rowRef}
+                    className="trp-card"
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-40px" }}
+                    transition={{ duration: 0.45, ease: EASE }}
+                >
+                    {thumbnailSrc && (
+                        <div
+                            className={
+                                enableLightbox
+                                    ? "trp-card-image-wrap is-zoomable"
+                                    : "trp-card-image-wrap"
+                            }
+                            onClick={enableLightbox ? openImage : undefined}
+                            onKeyDown={
+                                enableLightbox ? openImageOnKey : undefined
+                            }
+                            tabIndex={enableLightbox ? 0 : undefined}
+                            role={enableLightbox ? "button" : undefined}
+                            aria-label={
+                                enableLightbox
+                                    ? `${name} — Bild vergrössern`
+                                    : undefined
+                            }
+                        >
+                            {/* VÁLTOZÁS (4/5): alt="" helyett a kezelés neve, + lazy betöltés */}
+                            <img
+                                src={thumbnailSrc}
+                                alt={name}
+                                loading="lazy"
+                                decoding="async"
+                                className="trp-card-image"
+                            />
+                            {enableLightbox && (
+                                <span className="trp-zoom-hint">
+                                    <IconExpand
+                                        color={TOKENS.mauve}
+                                        size={15}
+                                    />
+                                </span>
+                            )}
+                            {badgeText &&
+                                badgeText.trim() !== "" &&
+                                badgeText.length <= 10 && (
+                                    <span className="trp-badge-ribbon">
+                                        {badgeText}
+                                    </span>
+                                )}
+                        </div>
+                    )}
+
+                    <div className="trp-card-body">
+                        {((category && category.trim() !== "") ||
+                            (badgeText && badgeText.trim() !== "")) && (
+                            <div className="trp-eyebrow-row">
+                                {category && category.trim() !== "" && (
+                                    <span className="trp-category">
+                                        <IconSparkle
+                                            color={TOKENS.mauve}
+                                            size={10}
+                                        />
+                                        {category}
+                                    </span>
+                                )}
+                                {badgeText && badgeText.trim() !== "" && (
+                                    <span className="trp-badge-inline">
+                                        {badgeText}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        <h3 className="trp-card-title">{name}</h3>
+
+                        {(duration || priceSingle) && (
+                            <div className="trp-card-meta">
+                                {duration}
+                                {duration && priceSingle && " · "}
+                                {priceSingle && (
+                                    <>
+                                        ab <strong>{priceSingle}</strong>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="trp-card-actions">
+                            <button
+                                type="button"
+                                onClick={toggleOpen}
+                                aria-expanded={isOpen}
+                                className="trp-card-details-btn"
+                            >
+                                <span>{isOpen ? "Weniger" : "Details"}</span>
+                                <IconChevron
+                                    color={TOKENS.mauve}
+                                    open={isOpen}
+                                    size={13}
+                                />
+                            </button>
+                            <motion.button
+                                type="button"
+                                onClick={handleInstantBook}
+                                onMouseEnter={startWarm}
+                                onMouseLeave={cancelWarm}
+                                onTouchStart={startWarm}
+                                onFocus={startWarm}
+                                whileTap={{ scale: 0.96 }}
+                                aria-label={`${name} — ${ctaLabel}`}
+                                className="trp-card-book-btn"
+                            >
+                                <span>Buchen</span>
+                                <IconArrowUpRight color="#FFFFFF" size={13} />
+                            </motion.button>
+                        </div>
+                    </div>
+                </motion.div>
+            ) : (
+                // ── DESKTOP / TABLET NÉZET: vízszintes sor, nagyobb thumbnail + szöveges gombok ──
+                <motion.div
+                    ref={rowRef}
+                    className={
+                        isOpen && imageExpands ? "trp-row is-open" : "trp-row"
+                    }
+                    onClick={() => setIsOpen((v) => !v)}
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-40px" }}
+                    transition={{ duration: 0.45, ease: EASE }}
+                >
+                    <AnimatePresence>
+                        {isOpen && !imageExpands && (
+                            <motion.span
+                                className="trp-marker"
+                                initial={{ scaleY: 0, opacity: 0 }}
+                                animate={{ scaleY: 1, opacity: 1 }}
+                                exit={{ scaleY: 0, opacity: 0 }}
+                                transition={{ duration: 0.25, ease: EASE }}
+                            />
+                        )}
+                    </AnimatePresence>
+
+                    {thumbnailSrc && (
+                        <div
+                            className="trp-thumb-wrap"
+                            onClick={
+                                enableLightbox && isOpen && imageExpands
+                                    ? openImage
+                                    : undefined
+                            }
+                            onKeyDown={
+                                enableLightbox && isOpen && imageExpands
+                                    ? openImageOnKey
+                                    : undefined
+                            }
+                            tabIndex={
+                                enableLightbox && isOpen && imageExpands
+                                    ? 0
+                                    : undefined
+                            }
+                            role={
+                                enableLightbox && isOpen && imageExpands
+                                    ? "button"
+                                    : undefined
+                            }
+                            aria-label={
+                                enableLightbox && isOpen && imageExpands
+                                    ? `${name} — Bild vergrössern`
+                                    : undefined
+                            }
+                        >
+                            <div className="trp-thumb">
+                                {/* VÁLTOZÁS (5/5): alt="" helyett a kezelés neve, + lazy betöltés */}
+                                <img
+                                    src={thumbnailSrc}
+                                    alt={name}
+                                    loading="lazy"
+                                    decoding="async"
+                                />
+                            </div>
+                            {enableLightbox && isOpen && imageExpands && (
+                                <motion.span
+                                    className="trp-zoom-hint"
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{
+                                        duration: 0.3,
+                                        ease: EASE,
+                                        delay: 0.25,
+                                    }}
+                                >
+                                    <IconExpand
+                                        color={TOKENS.mauve}
+                                        size={16}
+                                    />
+                                </motion.span>
+                            )}
+                            {/* BADGE - kis szalag a thumbnail sarkán, csak akkor, ha nincs vagy nagyon rövid a badge szöveg */}
+                            {badgeText &&
+                                badgeText.trim() !== "" &&
+                                badgeText.length <= 10 && (
+                                    <span className="trp-badge-ribbon">
+                                        {badgeText}
+                                    </span>
+                                )}
+                        </div>
+                    )}
+
+                    {/* Nulla magasságú sortörés — csak nyitva látszik */}
+                    <span className="trp-break" aria-hidden="true" />
+
+                    <div className="trp-info">
+                        {/* KATEGÓRIA + BADGE - elegáns, díszítő eyebrow sor a cím felett */}
+                        {((category && category.trim() !== "") ||
+                            (badgeText && badgeText.trim() !== "")) && (
+                            <div className="trp-eyebrow-row">
+                                {category && category.trim() !== "" && (
+                                    <span className="trp-category">
+                                        <IconSparkle
+                                            color={TOKENS.mauve}
+                                            size={10}
+                                        />
+                                        {category}
+                                    </span>
+                                )}
+                                {badgeText && badgeText.trim() !== "" && (
+                                    <span className="trp-badge-inline">
+                                        {badgeText}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        <h3 className="trp-title">{name}</h3>
+                        {duration && (
+                            <span
+                                style={{
+                                    display: "block",
+                                    marginTop: "0.3rem",
+                                    fontSize: "0.875rem",
+                                    color: TOKENS.muted,
+                                    fontWeight: 300,
+                                }}
+                            >
+                                {duration}
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="trp-actions">
+                        {priceSingle && (
+                            <span className="trp-price">ab {priceSingle}</span>
+                        )}
+
+                        <div className="trp-btn-group">
+                            {/* DETAILS — szöveges másodlagos gomb */}
+                            <motion.button
+                                type="button"
+                                onClick={toggleOpen}
+                                whileTap={{ scale: 0.97 }}
+                                aria-expanded={isOpen}
+                                aria-label={`${name} — Details`}
+                                className="trp-desk-btn trp-desk-details"
+                            >
+                                <span>{isOpen ? "Weniger" : "Details"}</span>
+                                <IconChevron
+                                    color={TOKENS.mauve}
+                                    open={isOpen}
+                                    size={14}
+                                />
+                            </motion.button>
+
+                            {/* BUCHEN — szöveges elsődleges gomb */}
+                            <motion.button
+                                type="button"
+                                onClick={handleInstantBook}
+                                onMouseEnter={startWarm}
+                                onMouseLeave={cancelWarm}
+                                onTouchStart={startWarm}
+                                onFocus={startWarm}
+                                whileTap={{ scale: 0.97 }}
+                                aria-label={`${name} — ${ctaLabel}`}
+                                className="trp-desk-btn trp-desk-book"
+                            >
+                                <span>Buchen</span>
+                                <IconArrowUpRight color="#FFFFFF" size={14} />
+                            </motion.button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+            <AnimatePresence initial={false}>
+                {isOpen && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.35, ease: EASE }}
+                        style={{ overflow: "hidden" }}
+                    >
+                        <div className="trp-detail">
+                            <div className="trp-detail-body">
+                                {/* BULLETPOINT 1-4 - a leírás előtt, kiemelt előnyök listaként */}
+                                {bullets.length > 0 && (
+                                    <div className="trp-bullets">
+                                        {bullets.map((b, i) => (
+                                            <div
+                                                key={i}
+                                                className="trp-bullet-item"
+                                            >
+                                                <IconCheckCircle
+                                                    color={TOKENS.mauve}
+                                                    size={16}
+                                                />
+                                                <span>{b}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {description && (
+                                    <p
+                                        style={{
+                                            margin: "0 0 1rem 0",
+                                            fontSize: "0.9375rem",
+                                            lineHeight: 1.6,
+                                            maxWidth: "65ch",
+                                            color: TOKENS.muted,
+                                            fontWeight: 300,
+                                        }}
+                                    >
+                                        {description}
+                                    </p>
+                                )}
+
+                                {(priceAbo3 || priceAbo6) && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            flexWrap: "wrap",
+                                            gap: "0.5rem",
+                                            marginBottom: "1rem",
+                                        }}
+                                    >
+                                        {priceAbo3 && (
+                                            <div
+                                                style={{
+                                                    fontSize: "0.875rem",
+                                                    fontFamily:
+                                                        TOKENS.fontHeading,
+                                                    background: "#FFFFFF",
+                                                    border: "1px solid rgba(166,128,124,0.2)",
+                                                    padding: "0.375rem 0.75rem",
+                                                    borderRadius: 4,
+                                                    color: TOKENS.ink,
+                                                }}
+                                            >
+                                                3er Abo:{" "}
+                                                <span
+                                                    style={{
+                                                        color: TOKENS.mauve,
+                                                        fontWeight: 500,
+                                                    }}
+                                                >
+                                                    {priceAbo3}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {priceAbo6 && (
+                                            <div
+                                                style={{
+                                                    fontSize: "0.875rem",
+                                                    fontFamily:
+                                                        TOKENS.fontHeading,
+                                                    background: "#FFFFFF",
+                                                    border: "1px solid rgba(166,128,124,0.2)",
+                                                    padding: "0.375rem 0.75rem",
+                                                    borderRadius: 4,
+                                                    color: TOKENS.ink,
+                                                }}
+                                            >
+                                                6er Abo:{" "}
+                                                <span
+                                                    style={{
+                                                        color: TOKENS.mauve,
+                                                        fontWeight: 500,
+                                                    }}
+                                                >
+                                                    {priceAbo6}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <motion.button
+                                    type="button"
+                                    onClick={handleInstantBook}
+                                    onMouseEnter={startWarm}
+                                    onMouseLeave={cancelWarm}
+                                    onTouchStart={startWarm}
+                                    onFocus={startWarm}
+                                    whileHover={{ x: 3 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "0.5rem",
+                                        padding: "0.75rem 1.375rem",
+                                        background: TOKENS.ink,
+                                        color: TOKENS.cream,
+                                        border: "none",
+                                        borderRadius: 4,
+                                        fontFamily: TOKENS.fontBody,
+                                        fontSize: "0.875rem",
+                                        fontWeight: 500,
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    <span>{ctaLabel}</span>
+                                    <IconArrowUpRight
+                                        color={TOKENS.cream}
+                                        size={13}
+                                    />
+                                </motion.button>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* TELJES KÉP NÉZET — a kép vágás nélkül, contain módban */}
+            <AnimatePresence>
+                {isImageOpen && thumbnailSrc && (
+                    <motion.div
+                        className="trp-lightbox"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`${name} — Bild`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25, ease: EASE }}
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setIsImageOpen(false)
+                        }}
+                    >
+                        <div className="trp-lightbox-backdrop" />
+
+                        <motion.img
+                            src={thumbnailSrc}
+                            alt={name}
+                            className="trp-lightbox-img"
+                            initial={{ opacity: 0, scale: 0.94 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.96 }}
+                            transition={{ duration: 0.35, ease: EASE }}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+
+                        <span className="trp-lightbox-caption">{name}</span>
+
+                        <button
+                            type="button"
+                            className="trp-lightbox-close"
+                            aria-label="Schliessen"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setIsImageOpen(false)
+                            }}
+                        >
+                            <IconClose color="#FFFFFF" size={20} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Foglalási modal (Dinamikus háttérszínnel) */}
+            <AnimatePresence>
+                {isBookingOpen && (
+                    <div
+                        style={{
+                            position: "fixed",
+                            inset: 0,
+                            zIndex: 99999,
+                            display: "flex",
+                            alignItems: isMobile ? "flex-end" : "center",
+                            justifyContent: "center",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setIsBookingOpen(false)
+                            }}
+                            style={{
+                                position: "fixed",
+                                inset: 0,
+                                backgroundColor: "rgba(44,34,31,0.65)",
+                                backdropFilter: "blur(6px)",
+                                WebkitBackdropFilter: "blur(6px)",
+                            }}
+                        />
+                        <motion.div
+                            initial={
+                                isMobile
+                                    ? { y: "100%" }
+                                    : { opacity: 0, scale: 0.95, y: 20 }
+                            }
+                            animate={
+                                isMobile
+                                    ? { y: 0 }
+                                    : { opacity: 1, scale: 1, y: 0 }
+                            }
+                            exit={
+                                isMobile
+                                    ? { y: "100%" }
+                                    : { opacity: 0, scale: 0.95, y: 20 }
+                            }
+                            transition={{
+                                type: "spring",
+                                damping: 30,
+                                stiffness: 300,
+                            }}
+                            drag={isMobile ? "y" : false}
+                            dragConstraints={{ top: 0, bottom: 600 }}
+                            onDragEnd={(_, info) => {
+                                if (
+                                    info.offset.y > 120 ||
+                                    info.velocity.y > 400
+                                ) {
+                                    setIsBookingOpen(false)
+                                }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                position: "relative",
+                                width: isMobile ? "100%" : "90%",
+                                maxWidth: 800,
+                                height: isMobile ? "88vh" : "75vh",
+                                maxHeight: 740,
+                                backgroundColor:
+                                    modalBgColor /* Dinamikus Prop alapú háttérszín */,
+                                borderRadius: isMobile ? "24px 24px 0 0" : 20,
+                                boxShadow: "0 24px 64px rgba(0,0,0,0.28)",
+                                display: "flex",
+                                flexDirection: "column",
+                                overflow: "hidden",
+                                zIndex: 10,
+                            }}
+                        >
+                            {/* Drag handle vizuális indikátor mobilon */}
+                            {isMobile && (
+                                <div
+                                    style={{
+                                        width: "100%",
+                                        display: "flex",
+                                        justifyContent: "center",
+                                        padding: "12px 0 4px 0",
+                                        cursor: "grab",
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            width: "40px",
+                                            height: "5px",
+                                            borderRadius: "50px",
+                                            backgroundColor:
+                                                "rgba(122, 115, 105, 0.25)",
+                                        }}
+                                    />
+                                </div>
+                            )}
+
+                            <div
+                                style={{
+                                    padding: isMobile
+                                        ? "0.5rem 1.75rem 1.25rem"
+                                        : "1.25rem 1.75rem",
+                                    borderBottom:
+                                        "1px solid rgba(166,128,124,0.15)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                }}
+                            >
+                                <h3
+                                    style={{
+                                        fontFamily: TOKENS.fontHeading,
+                                        fontSize: "1.1875rem",
+                                        fontWeight: 500,
+                                        color: TOKENS.ink,
+                                        margin: 0,
+                                    }}
+                                >
+                                    {name}
+                                </h3>
+                                {!isMobile && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsBookingOpen(false)}
+                                        style={{
+                                            width: 38,
+                                            height: 38,
+                                            borderRadius: "50%",
+                                            border: "1px solid rgba(166,128,124,0.2)",
+                                            background: "transparent",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        <IconClose
+                                            color={TOKENS.ink}
+                                            size={18}
+                                        />
+                                    </button>
+                                )}
+                            </div>
+                            {/* Transzparens iframe konténer, hogy a választott modalBgColor érvényesüljön */}
+                            <div
+                                style={{
+                                    flex: 1,
+                                    position: "relative",
+                                    backgroundColor: "transparent",
+                                }}
+                            >
+                                {finalBookingUrl ? (
+                                    <>
+                                        {/*
+                                            NAPTÁR-VÁZLAT — amíg a Trafft iframe
+                                            betölt (~3–6 mp), ez mutatja a naptár
+                                            körvonalát üres háttér helyett. Az
+                                            iframe onLoad eseményére eltűnik.
+                                        */}
+                                        <AnimatePresence>
+                                            {!bookingLoaded && (
+                                                <motion.div
+                                                    className="trp-skel-wrap"
+                                                    initial={{ opacity: 1 }}
+                                                    exit={{ opacity: 0 }}
+                                                    transition={{
+                                                        duration: 0.35,
+                                                        ease: EASE,
+                                                    }}
+                                                    aria-hidden="true"
+                                                >
+                                                    <div className="trp-skel trp-skel-title" />
+                                                    <div className="trp-skel trp-skel-sub" />
+                                                    <div className="trp-skel-divider" />
+                                                    <div className="trp-skel-weekdays">
+                                                        {Array.from({
+                                                            length: 7,
+                                                        }).map((_, i) => (
+                                                            <div
+                                                                key={`wd-${i}`}
+                                                                className="trp-skel"
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                    <div className="trp-skel trp-skel-calendar" />
+                                                    <div className="trp-skel-divider" />
+                                                    <div className="trp-skel-slots">
+                                                        {Array.from({
+                                                            length: 6,
+                                                        }).map((_, i) => (
+                                                            <div
+                                                                key={`sl-${i}`}
+                                                                className="trp-skel"
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        <iframe
+                                            src={finalBookingUrl}
+                                            onLoad={() =>
+                                                setBookingLoaded(true)
+                                            }
+                                            style={{
+                                                width: "100%",
+                                                height: "100%",
+                                                border: "none",
+                                                position: "relative",
+                                                opacity: bookingLoaded ? 1 : 0,
+                                                transition:
+                                                    "opacity 0.35s ease",
+                                            }}
+                                            title="Termin buchen"
+                                            allow="payment; camera; microphone"
+                                        />
+                                    </>
+                                ) : (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            height: "100%",
+                                            color: TOKENS.muted,
+                                        }}
+                                    >
+                                        Nincs megadva foglalási link.
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
+    )
+}
+
+addPropertyControls(TreatmentRowPremium, {
+    name: {
+        type: ControlType.String,
+        title: "Kezelés neve",
+        defaultValue: "Diamant-Mikrodermabrasion",
+    },
+    description: {
+        type: ControlType.String,
+        title: "Leírás",
+        displayTextArea: true,
+        defaultValue:
+            "Erleben Sie massgeschneiderte Hautpflege mit sofort sichtbarem Ergebnis.",
+    },
+    thumbnail: {
+        type: ControlType.ResponsiveImage,
+        title: "Thumbnail fotó",
+    },
+    expandImageOnOpen: {
+        type: ControlType.Boolean,
+        title: "[Details] Kép kinyílik",
+        defaultValue: true,
+        description:
+            "Nyitáskor a bal oldali kis bélyegkép kiszélesedik a sor teljes szélességére és magasságot kap; a név, az ár és a gombok alá csúsznak. Mobilon nincs hatása, mert ott a kártya teteje eleve egy nagy kép.",
+    },
+    enableLightbox: {
+        type: ControlType.Boolean,
+        title: "[Kép] Teljes nézet",
+        defaultValue: true,
+        description:
+            "A képre kattintva a fotó vágás nélkül, teljes méretben nyílik meg egy sötét háttér előtt. Desktopon csak a kinyitott, nagy kép kattintható; mobilon a kártya teteje.",
+    },
+    priceSingle: {
+        type: ControlType.String,
+        title: "Alapár",
+        defaultValue: "165 CHF",
+    },
+    priceAbo3: {
+        type: ControlType.String,
+        title: "3er Abo ár",
+        defaultValue: "419 CHF",
+    },
+    priceAbo6: {
+        type: ControlType.String,
+        title: "6er Abo ár",
+        defaultValue: "655 CHF",
+    },
+    duration: {
+        type: ControlType.String,
+        title: "Időtartam",
+        defaultValue: "75 Min",
+    },
+    category: {
+        type: ControlType.String,
+        title: "Kategória",
+        defaultValue: "",
+        description:
+            "Kösd a CMS 'Kategória' mezőjéhez. Egyszerre szolgál szűrésre ÉS elegáns kis felirat-díszítésként a cím felett.",
+    },
+    badgeText: {
+        type: ControlType.String,
+        title: "Címke (Badge)",
+        defaultValue: "",
+        description:
+            "Rövid szó (pl. 'Neu', 'Beliebt') — a thumbnail sarkán jelenik meg szalagként (max ~10 karakter), és a kategória mellett is, kis pill formában.",
+    },
+    bullet1: {
+        type: ControlType.String,
+        title: "Bulletpoint 1",
+        defaultValue: "",
+    },
+    bullet2: {
+        type: ControlType.String,
+        title: "Bulletpoint 2",
+        defaultValue: "",
+    },
+    bullet3: {
+        type: ControlType.String,
+        title: "Bulletpoint 3",
+        defaultValue: "",
+    },
+    bullet4: {
+        type: ControlType.String,
+        title: "Bulletpoint 4",
+        defaultValue: "",
+    },
+    goalsCsv: {
+        type: ControlType.String,
+        title: "[Cél] Kulcsszavak (vesszővel)",
+        defaultValue: "",
+        description:
+            "pl. 'Feszesítés, Ránctalanítás' — a szűrősáv Cél-listájával kell egyezniük.",
+    },
+    searchKeywordsCsv: {
+        type: ControlType.String,
+        title: "[Keresés] Kulcsszavak (vesszővel)",
+        defaultValue: "",
+        displayTextArea: true,
+        description:
+            "Kösd a CMS 'Search Keywords' mezőjéhez. Ezek a kifejezések is találatot adnak a keresőben, még ha nincsenek benne a névben vagy leírásban.",
+    },
+    enableFilterResponse: {
+        type: ControlType.Boolean,
+        title: "[Szűrő] Válasz bekapcsolva",
+        defaultValue: true,
+    },
+    bookingUrl: {
+        type: ControlType.String,
+        title: "Trafft / Booking URL",
+        defaultValue: "https://gabriellasbeautysalon.trafft.com/booking",
+    },
+    ctaLabel: {
+        type: ControlType.String,
+        title: "CTA szöveg",
+        defaultValue: "Jetzt Termin buchen",
+    },
+    modalBgColor: {
+        type: ControlType.Color,
+        title: "Modal háttérszín",
+        defaultValue: "#FFFFFF",
+    },
+})
