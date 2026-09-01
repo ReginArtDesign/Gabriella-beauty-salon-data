@@ -1,0 +1,1020 @@
+// ============ TreatmentToolbar.tsx ============
+// Kereső + találatszám + kategória-szűrő EGY sávban, a kezelés-lista
+// fölött. Ez váltja ki a Framer natív kereső mezőjét.
+//
+// MIÉRT EGY KOMPONENS:
+//   Eddig három külön Framer-elem állt egymás mellett (Input, a
+//   dropdown, és külön a "17 Behandlungen" felirat), amiket kézzel
+//   kellett egy vonalba igazítani — és pont az igazítás nem sikerült:
+//   a sáv középre került, miközben a kártyák és a fejezetcímek balra,
+//   a tartalmi oszlopban kezdődnek. Ez a különbség az oka annak, hogy
+//   a sáv "lebeg" a szekciók között ahelyett, hogy a listához tartozna.
+//   Egy komponensben az igazítás egyetlen prop.
+//
+// ── A MEGLÉVŐ SZŰRŐRENDSZERT NEM SÉRTI ──
+//   A TreatmentRowPremium és a CategoryChapterHeader a `ipl-filter`
+//   CustomEvent-et és a `window.__iplFilterState` objektumot figyeli,
+//   {search, category, goal, priceRange} alakban. Ez a komponens
+//   PONTOSAN ezt a szerződést tartja:
+//     • kiolvassa a meglévő állapotot,
+//     • CSAK a `search` mezőt írja át,
+//     • a category / goal / priceRange értékeket VÁLTOZATLANUL
+//       visszateszi — így egy másik szűrősáv beállításait nem törli,
+//     • ugyanúgy frissíti a `window.__iplFilterState`-et is, mert a
+//       sorok kezdeti állapotukban ebből olvasnak.
+//   A kulcsszavas keresés (searchKeywordsCsv) érintetlen: a szűrés
+//   logikája továbbra is a sorokban fut, mi csak a keresőszót küldjük.
+//
+// ── AMIT MEGOLD ──
+//   1. Balra zárás — a tartalmi oszlop szélességére és igazítására.
+//   2. Élő találatszám ("4 von 17 Behandlungen"). Ez a legerősebb
+//      visszajelzés szűrésnél: látszik, hogy a keresés tett valamit.
+//   3. "Nincs találat" blokk elgépeléskor — enélkül a látogató üres
+//      oldalt lát és azt hiszi, elromlott valami.
+//   4. Sticky viselkedés tömör háttérrel, ragadáskor finom árnyékkal.
+//   5. Fókuszra görgetés: a keresőbe kattintva az első fejezetcím
+//      pont a sáv alá kerül — a lista a kereső "alatt" kezdődik,
+//      nem a képernyő aljában.
+//   6. Lágyabb animációk + a gépelés késleltetett feldolgozása, hogy
+//      a lista ne ugráljon minden leütésre.
+//
+// A KATEGÓRIA-DROPDOWN slotként megy bele: húzd be a meglévő
+// DynamicCategoryDropdown példányodat a "Szűrő komponens" mezőbe.
+// Így a CMS-szkennelés és a görgetés-logika ott marad, ahol van.
+// ------------------------------------------------------------
+import * as React from "react"
+import { useState, useEffect, useRef, useMemo, useCallback, useId } from "react"
+import { addPropertyControls, ControlType } from "framer"
+import { motion, AnimatePresence } from "framer-motion"
+
+const TOKENS = {
+    cream: "#F7ECDF",
+    ink: "#3A3028",
+    inkDeep: "#6B4D57",
+    mauve: "#A6807C",
+    muted: "#7A7369",
+    border: "rgba(166,128,124,0.20)",
+    fontHeading: "'Montserrat', sans-serif",
+    fontBody: "'Inter', sans-serif",
+}
+
+// Lágyabb, hosszabb kifutású görbe, mint a korábbi [0.16,1,0.3,1]:
+// ugyanaz a "svájci" karakter, de kevésbé kapkodó vége.
+const SOFT_EASE = [0.22, 1, 0.36, 1]
+
+function usePrefersReducedMotion() {
+    const [reduced, setReduced] = useState(false)
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+        const update = () => setReduced(media.matches)
+        update()
+        media.addEventListener("change", update)
+        return () => media.removeEventListener("change", update)
+    }, [])
+    return reduced
+}
+
+function useMediaQuery(query: string) {
+    const [matches, setMatches] = useState(false)
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const media = window.matchMedia(query)
+        const update = () => setMatches(media.matches)
+        update()
+        media.addEventListener("change", update)
+        return () => media.removeEventListener("change", update)
+    }, [query])
+    return matches
+}
+
+function IconSearch({ color }: { color: string }) {
+    return (
+        <svg
+            width={18}
+            height={18}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0 }}
+            aria-hidden="true"
+        >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5" />
+        </svg>
+    )
+}
+
+function IconClose({ color, size = 14 }: { color: string; size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2.1"
+            strokeLinecap="round"
+            aria-hidden="true"
+        >
+            <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+    )
+}
+
+interface TreatmentToolbarProps {
+    placeholder: string
+    inputAriaLabel: string
+    searchDebounce: number
+
+    showCount: boolean
+    countLabel: string
+    countConnector: string
+
+    filterSlot?: React.ReactNode
+
+    emptyTitle: string
+    emptyText: string
+    showReset: boolean
+    resetLabel: string
+
+    align: string
+    maxWidth: number
+    paddingX: number
+    paddingY: number
+    fieldHeight: number
+    radius: number
+    gap: number
+
+    isSticky: boolean
+    stickyTop: number
+    stickyTopMobile: number
+    shadowWhenStuck: boolean
+
+    scrollOnFocus: boolean
+    scrollGap: number
+
+    backgroundColor: string
+    fieldBg: string
+    borderColor: string
+    textColor: string
+    mutedColor: string
+    accentColor: string
+
+    style?: React.CSSProperties
+}
+
+/**
+ * Kereső + találatszám + szűrő sáv a kezelés-lista fölé.
+ *
+ * @framerSupportedLayoutWidth any
+ * @framerSupportedLayoutHeight auto
+ * @framerIntrinsicWidth 1200
+ * @framerIntrinsicHeight 88
+ */
+export default function TreatmentToolbar({
+    placeholder = "Behandlung suchen …",
+    inputAriaLabel = "Behandlungen durchsuchen",
+    searchDebounce = 180,
+
+    showCount = true,
+    countLabel = "Behandlungen",
+    countConnector = "von",
+
+    filterSlot,
+
+    emptyTitle = "Keine Behandlung gefunden",
+    emptyText = "Für Ihre Suche gibt es keinen Treffer. Prüfen Sie die Schreibweise oder suchen Sie mit einem allgemeineren Begriff — zum Beispiel «Gesicht» statt einer genauen Bezeichnung.",
+    showReset = true,
+    resetLabel = "Suche zurücksetzen",
+
+    align = "left",
+    maxWidth = 1140,
+    paddingX = 40,
+    paddingY = 18,
+    fieldHeight = 48,
+    radius = 99,
+    gap = 14,
+
+    isSticky = true,
+    stickyTop = 80,
+    stickyTopMobile = 64,
+    shadowWhenStuck = true,
+
+    scrollOnFocus = true,
+    scrollGap = 20,
+
+    backgroundColor = "#F3E4DA",
+    fieldBg = "#FFFFFF",
+    borderColor = "rgba(166,128,124,0.20)",
+    textColor = "#3A3028",
+    mutedColor = "#7A7369",
+    accentColor = "#A6807C",
+
+    style,
+}: TreatmentToolbarProps) {
+    const reducedMotion = usePrefersReducedMotion()
+    const isMobile = useMediaQuery("(max-width: 860px)")
+    const rawId = useId()
+    const uid = useMemo(
+        () => "tt" + rawId.replace(/[^a-zA-Z0-9]/g, ""),
+        [rawId]
+    )
+
+    const [query, setQuery] = useState("")
+    const [counts, setCounts] = useState({ total: 0, visible: 0 })
+    const [isStuck, setIsStuck] = useState(false)
+
+    const barRef = useRef<HTMLDivElement>(null)
+    const sentinelRef = useRef<HTMLDivElement>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
+    const debounceRef = useRef<number | null>(null)
+
+    const activeStickyTop = isMobile ? stickyTopMobile : stickyTop
+
+    // ─────────────────────────────────────────────────────────────
+    // SZŰRŐ-ESEMÉNY KÜLDÉSE — a meglévő szerződés szerint.
+    // A category / goal / priceRange értékeket NEM írjuk felül:
+    // kiolvassuk a jelenlegi állapotból és visszatesszük.
+    // ─────────────────────────────────────────────────────────────
+    const dispatchSearch = useCallback((value: string) => {
+        if (typeof window === "undefined") return
+        const win = window as any
+        const prev = win.__iplFilterState || {}
+        const next = {
+            search: value,
+            category: prev.category || "alle",
+            goal: prev.goal || "alle",
+            priceRange: prev.priceRange || "alle",
+        }
+        win.__iplFilterState = next
+        window.dispatchEvent(new CustomEvent("ipl-filter", { detail: next }))
+    }, [])
+
+    // Késleltetett feldolgozás: a mező azonnal reagál (a beírt szöveg
+    // látszik), de a lista csak a gépelés szünetében rendeződik át.
+    // Ez az egyetlen legnagyobb lépés afelé, hogy a szűrés "lágy"
+    // legyen — enélkül minden leütésre végigfut a 17 soron.
+    const onChange = (value: string) => {
+        setQuery(value)
+        if (debounceRef.current !== null)
+            window.clearTimeout(debounceRef.current)
+        debounceRef.current = window.setTimeout(
+            () => dispatchSearch(value),
+            Math.max(0, searchDebounce)
+        )
+    }
+
+    const clearSearch = () => {
+        setQuery("")
+        if (debounceRef.current !== null)
+            window.clearTimeout(debounceRef.current)
+        dispatchSearch("")
+        inputRef.current?.focus()
+    }
+
+    useEffect(
+        () => () => {
+            if (debounceRef.current !== null)
+                window.clearTimeout(debounceRef.current)
+        },
+        []
+    )
+
+    // Ha egy MÁSIK komponens állítja a keresést (pl. egy másik sáv),
+    // a mező kövesse — így nem lesz két igazság.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail || {}
+            const incoming = detail.search || ""
+            setQuery((cur) => (cur === incoming ? cur : incoming))
+        }
+        window.addEventListener("ipl-filter", handler)
+        return () => window.removeEventListener("ipl-filter", handler)
+    }, [])
+
+    // ─────────────────────────────────────────────────────────────
+    // TALÁLATSZÁM — a sorok saját [data-ipl-cat] jelölőit számoljuk.
+    // A TreatmentRowPremium kiszűrt állapotban is a DOM-ban hagy egy
+    // display:none elemet ezzel az attribútummal, tehát az összes és
+    // a látható darabszám is pontosan kiolvasható. Nem kell hozzá
+    // semmit átírni a sorokban.
+    // ─────────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (typeof document === "undefined") return
+        let raf = 0
+        let timer = 0
+
+        const scan = () => {
+            const items = Array.from(
+                document.querySelectorAll<HTMLElement>("[data-ipl-cat]")
+            )
+            let visible = 0
+            for (const el of items) {
+                if (window.getComputedStyle(el).display !== "none") visible++
+            }
+            const total = items.length
+            setCounts((cur) =>
+                cur.total === total && cur.visible === visible
+                    ? cur // azonos érték → nincs újrarenderelés, nincs végtelen kör
+                    : { total, visible }
+            )
+        }
+
+        const schedule = () => {
+            window.clearTimeout(timer)
+            timer = window.setTimeout(() => {
+                cancelAnimationFrame(raf)
+                raf = requestAnimationFrame(scan)
+            }, 90)
+        }
+
+        schedule()
+        const t = window.setTimeout(schedule, 900) // a CMS késleltetett feltöltésére
+        window.addEventListener("ipl-filter", schedule)
+        const observer = new MutationObserver(schedule)
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["style"],
+        })
+
+        return () => {
+            window.clearTimeout(t)
+            window.clearTimeout(timer)
+            cancelAnimationFrame(raf)
+            window.removeEventListener("ipl-filter", schedule)
+            observer.disconnect()
+        }
+    }, [])
+
+    // Ragadás detektálása egy nulla magasságú őrszemmel a sáv fölött.
+    // Erre azért van szükség, mert a CSS-ben nincs ":stuck" állapot.
+    useEffect(() => {
+        if (!isSticky || !shadowWhenStuck) {
+            setIsStuck(false)
+            return
+        }
+        const el = sentinelRef.current
+        if (!el || typeof IntersectionObserver === "undefined") return
+        const io = new IntersectionObserver(
+            ([entry]) => setIsStuck(!entry.isIntersecting),
+            {
+                rootMargin: `-${activeStickyTop + 1}px 0px 0px 0px`,
+                threshold: 0,
+            }
+        )
+        io.observe(el)
+        return () => io.disconnect()
+    }, [isSticky, shadowWhenStuck, activeStickyTop])
+
+    // ─────────────────────────────────────────────────────────────
+    // FÓKUSZRA GÖRGETÉS
+    // A keresőbe kattintva az ELSŐ LÁTHATÓ fejezetcím teteje pontosan
+    // a sáv alá kerül. A számítás: a fejezetcím teteje mínusz
+    // (sticky eltolás + a sáv saját magassága + rés). A sáv magasságát
+    // futásidőben mérjük, tehát ha átállítod a mező magasságát vagy a
+    // paddinget, a görgetés magától igazodik — csak a "rés" propot
+    // kell finomhangolnod.
+    // ─────────────────────────────────────────────────────────────
+    const scrollToFirstChapter = useCallback(() => {
+        if (!scrollOnFocus || typeof window === "undefined") return
+        const headers = Array.from(
+            document.querySelectorAll<HTMLElement>("[data-chapter-cat]")
+        )
+        const first = headers.find(
+            (h) =>
+                h.offsetParent !== null &&
+                window.getComputedStyle(h).display !== "none"
+        )
+        if (!first) return
+        const barH = barRef.current?.getBoundingClientRect().height ?? 0
+        const top =
+            first.getBoundingClientRect().top +
+            window.pageYOffset -
+            (activeStickyTop + barH + scrollGap)
+        window.scrollTo({
+            top: Math.max(0, top),
+            behavior: reducedMotion ? "auto" : "smooth",
+        })
+    }, [scrollOnFocus, activeStickyTop, scrollGap, reducedMotion])
+
+    const handleFocus = () => {
+        // Kis késleltetés: mobilon a billentyűzet felugrása is mozgatja
+        // a nézetet, ne versenyezzen a két görgetés.
+        window.setTimeout(scrollToFirstChapter, 60)
+    }
+
+    const isFiltering = query.trim() !== ""
+    const noResults = isFiltering && counts.total > 0 && counts.visible === 0
+
+    const justify =
+        align === "center"
+            ? "center"
+            : align === "right"
+              ? "flex-end"
+              : "flex-start"
+
+    return (
+        <>
+            {/* Őrszem: nulla magasságú jelölő a sáv fölött — ebből tudjuk,
+                mikor ragadt be a sáv. */}
+            <div
+                ref={sentinelRef}
+                aria-hidden="true"
+                style={{ height: 0, width: "100%" }}
+            />
+            <section
+                ref={barRef}
+                className={`tt-root ${uid}`}
+                style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    backgroundColor: backgroundColor,
+                    fontFamily: TOKENS.fontBody,
+                    color: textColor,
+                    position: isSticky ? "sticky" : "relative",
+                    top: isSticky ? activeStickyTop : undefined,
+                    zIndex: isSticky ? 50 : undefined,
+                    boxShadow:
+                        isSticky && shadowWhenStuck && isStuck
+                            ? "0 6px 20px rgba(58,48,40,0.10)"
+                            : "0 0 0 rgba(0,0,0,0)",
+                    transition: "box-shadow 0.28s ease",
+                    WebkitFontSmoothing: "antialiased",
+                    ...style,
+                }}
+            >
+                {/* A <style> dangerouslySetInnerHTML-lel megy be
+                    (+ suppressHydrationWarning) — React gyerek-szövegként
+                    hydration hibát (#425) okoz. */}
+                <style
+                    suppressHydrationWarning
+                    dangerouslySetInnerHTML={{
+                        __html: `
+                .${uid} *, .${uid} *::before, .${uid} *::after {
+                    box-sizing: border-box;
+                }
+                .${uid} .tt-inner {
+                    max-width: ${maxWidth}px;
+                    margin: 0 auto;
+                    padding: ${paddingY}px ${paddingX}px;
+                }
+                .${uid} .tt-bar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: ${justify};
+                    flex-wrap: wrap;
+                    gap: ${gap}px;
+                    width: 100%;
+                    min-width: 0;
+                }
+                /* A kereső rugalmas, de SOHA nem lóg ki: a min-width: 0
+                   nélkül egy flex elem nem tud a tartalmánál keskenyebb
+                   lenni — ez a leggyakoribb oka a kilógó sávoknak. */
+                .${uid} .tt-search {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex: 1 1 260px;
+                    min-width: 0;
+                    max-width: 420px;
+                    height: ${fieldHeight}px;
+                    padding: 0 14px 0 16px;
+                    background: ${fieldBg};
+                    border: 1px solid ${borderColor};
+                    border-radius: ${radius}px;
+                    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+                }
+                .${uid} .tt-search:focus-within {
+                    border-color: ${accentColor};
+                    box-shadow: 0 0 0 3px ${accentColor}22;
+                }
+                .${uid} .tt-input {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                    height: 100%;
+                    border: none;
+                    outline: none;
+                    background: transparent;
+                    font-family: ${TOKENS.fontBody};
+                    font-size: 15px;
+                    font-weight: 400;
+                    color: ${textColor};
+                }
+                .${uid} .tt-input::placeholder {
+                    color: ${mutedColor};
+                    opacity: 1;
+                }
+                .${uid} .tt-clear {
+                    flex: 0 0 auto;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 99px;
+                    border: none;
+                    background: ${accentColor}1F;
+                    color: ${accentColor};
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                }
+                .${uid} .tt-clear:hover { background: ${accentColor}33; }
+
+                .${uid} .tt-right {
+                    display: flex;
+                    align-items: center;
+                    gap: ${gap}px;
+                    min-width: 0;
+                    flex: 0 1 auto;
+                }
+                .${uid} .tt-count {
+                    font-family: ${TOKENS.fontHeading};
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.16em;
+                    text-transform: uppercase;
+                    /* Kis nagybetűs szöveg: NEM mauve (az krémen csak
+                       3.0:1), hanem a mély mauve — 6.4:1. */
+                    color: ${TOKENS.inkDeep};
+                    white-space: nowrap;
+                }
+                .${uid} .tt-count b {
+                    font-weight: 600;
+                    color: ${accentColor};
+                }
+                .${uid} .tt-slot {
+                    display: flex;
+                    align-items: center;
+                    min-width: 0;
+                }
+
+                /* ── NINCS TALÁLAT ── */
+                .${uid} .tt-empty {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 14px;
+                    margin-top: 16px;
+                    padding-top: 16px;
+                    border-top: 1px solid ${accentColor}26;
+                    max-width: 620px;
+                }
+                .${uid} .tt-empty-title {
+                    margin: 0 0 6px 0;
+                    font-family: ${TOKENS.fontHeading};
+                    font-size: 16px;
+                    font-weight: 500;
+                    color: ${textColor};
+                }
+                .${uid} .tt-empty-text {
+                    margin: 0;
+                    font-size: 14.5px;
+                    font-weight: 300;
+                    line-height: 1.6;
+                    color: ${textColor};
+                }
+                .${uid} .tt-reset {
+                    margin-top: 12px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 9px 16px;
+                    border-radius: ${Math.min(radius, 99)}px;
+                    border: 1.5px solid ${accentColor};
+                    background: transparent;
+                    color: ${accentColor};
+                    font-family: ${TOKENS.fontHeading};
+                    font-size: 13px;
+                    font-weight: 400;
+                    letter-spacing: 0.02em;
+                    cursor: pointer;
+                    transition: background 0.2s ease-in-out, color 0.2s ease-in-out;
+                }
+                .${uid} .tt-reset:hover {
+                    background: ${accentColor};
+                    color: #FFFFFF;
+                }
+
+                @media (max-width: 860px) {
+                    .${uid} .tt-inner {
+                        padding: ${Math.max(12, paddingY - 4)}px ${Math.max(16, paddingX - 18)}px;
+                    }
+                    .${uid} .tt-bar {
+                        justify-content: flex-start;
+                    }
+                    .${uid} .tt-search {
+                        flex: 1 1 100%;
+                        max-width: 100%;
+                    }
+                    .${uid} .tt-right {
+                        width: 100%;
+                        justify-content: space-between;
+                    }
+                    .${uid} .tt-count { font-size: 10.5px; letter-spacing: 0.12em; }
+                }
+            `,
+                    }}
+                />
+
+                <div className="tt-inner">
+                    <div className="tt-bar">
+                        <div className="tt-search">
+                            <IconSearch color={accentColor} />
+                            <input
+                                ref={inputRef}
+                                className="tt-input"
+                                type="search"
+                                inputMode="search"
+                                autoComplete="off"
+                                value={query}
+                                placeholder={placeholder}
+                                aria-label={inputAriaLabel}
+                                onChange={(e) => onChange(e.target.value)}
+                                onFocus={handleFocus}
+                            />
+                            <AnimatePresence initial={false}>
+                                {query !== "" && (
+                                    <motion.button
+                                        type="button"
+                                        className="tt-clear"
+                                        aria-label="Suche löschen"
+                                        onClick={clearSearch}
+                                        initial={
+                                            reducedMotion
+                                                ? { opacity: 0 }
+                                                : { opacity: 0, scale: 0.7 }
+                                        }
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={
+                                            reducedMotion
+                                                ? { opacity: 0 }
+                                                : { opacity: 0, scale: 0.7 }
+                                        }
+                                        transition={{
+                                            duration: 0.22,
+                                            ease: SOFT_EASE,
+                                        }}
+                                    >
+                                        <IconClose color={accentColor} />
+                                    </motion.button>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        <div className="tt-right">
+                            {showCount && counts.total > 0 && (
+                                <AnimatePresence mode="wait" initial={false}>
+                                    <motion.span
+                                        key={`${counts.visible}-${counts.total}-${isFiltering}`}
+                                        className="tt-count"
+                                        initial={
+                                            reducedMotion
+                                                ? { opacity: 0 }
+                                                : { opacity: 0, y: 4 }
+                                        }
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={
+                                            reducedMotion
+                                                ? { opacity: 0 }
+                                                : { opacity: 0, y: -4 }
+                                        }
+                                        transition={{
+                                            duration: 0.3,
+                                            ease: SOFT_EASE,
+                                        }}
+                                        aria-live="polite"
+                                    >
+                                        {isFiltering ? (
+                                            <>
+                                                <b>{counts.visible}</b>{" "}
+                                                {countConnector} {counts.total}{" "}
+                                                {countLabel}
+                                            </>
+                                        ) : (
+                                            <>
+                                                {counts.total} {countLabel}
+                                            </>
+                                        )}
+                                    </motion.span>
+                                </AnimatePresence>
+                            )}
+
+                            {filterSlot && (
+                                <div className="tt-slot">{filterSlot}</div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* NINCS TALÁLAT — csak akkor, ha tényleg keresett is
+                        valamit. Üres keresőnél sosem jelenik meg. */}
+                    <AnimatePresence initial={false}>
+                        {noResults && (
+                            <motion.div
+                                className="tt-empty"
+                                initial={
+                                    reducedMotion
+                                        ? { opacity: 0 }
+                                        : { opacity: 0, y: -6, height: 0 }
+                                }
+                                animate={
+                                    reducedMotion
+                                        ? { opacity: 1 }
+                                        : { opacity: 1, y: 0, height: "auto" }
+                                }
+                                exit={
+                                    reducedMotion
+                                        ? { opacity: 0 }
+                                        : { opacity: 0, y: -6, height: 0 }
+                                }
+                                transition={{ duration: 0.38, ease: SOFT_EASE }}
+                                style={{ overflow: "hidden" }}
+                            >
+                                <div>
+                                    <p className="tt-empty-title">
+                                        {emptyTitle}
+                                    </p>
+                                    <p className="tt-empty-text">{emptyText}</p>
+                                    {showReset && (
+                                        <button
+                                            type="button"
+                                            className="tt-reset"
+                                            onClick={clearSearch}
+                                        >
+                                            {resetLabel}
+                                        </button>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            </section>
+        </>
+    )
+}
+
+addPropertyControls(TreatmentToolbar, {
+    // ── KERESŐ ──
+    placeholder: {
+        type: ControlType.String,
+        title: "Kereső placeholder",
+        defaultValue: "Behandlung suchen …",
+    },
+    inputAriaLabel: {
+        type: ControlType.String,
+        title: "Kereső aria-label",
+        defaultValue: "Behandlungen durchsuchen",
+        description:
+            "Képernyőolvasónak. A placeholder önmagában nem számít címkének.",
+    },
+    searchDebounce: {
+        type: ControlType.Number,
+        title: "Gépelés késleltetés",
+        defaultValue: 180,
+        min: 0,
+        max: 600,
+        step: 10,
+        unit: "ms",
+        description:
+            "Ennyi szünet után indul a szűrés. 0-nál minden leütésre újrarendeződik a lista (ugrál); 150-250 ms között érződik a legpuhábbnak.",
+    },
+
+    // ── SZŰRŐ SLOT ──
+    filterSlot: {
+        type: ControlType.ComponentInstance,
+        title: "Szűrő komponens",
+        description:
+            "Húzd ide a meglévő DynamicCategoryDropdown példányodat. Így a CMS-szkennelés és a görgetés ott marad, ahol van — ez a sáv csak a helyét adja. Állítsd a gomb magasságát ugyanarra, mint a kereső mezőé.",
+    },
+
+    // ── TALÁLATSZÁM ──
+    showCount: {
+        type: ControlType.Boolean,
+        title: "Találatszám",
+        defaultValue: true,
+        enabledTitle: "Látszik",
+        disabledTitle: "Rejtve",
+        description:
+            "Szűrés közben '4 von 17 Behandlungen'. Ez a legerősebb visszajelzés: látszik, hogy a keresés tényleg csinált valamit.",
+    },
+    countLabel: {
+        type: ControlType.String,
+        title: "Darabszám felirat",
+        defaultValue: "Behandlungen",
+        hidden: (props) => !props.showCount,
+    },
+    countConnector: {
+        type: ControlType.String,
+        title: "Kötőszó",
+        defaultValue: "von",
+        description: "'4 VON 17 Behandlungen'",
+        hidden: (props) => !props.showCount,
+    },
+
+    // ── NINCS TALÁLAT ──
+    emptyTitle: {
+        type: ControlType.String,
+        title: "Nincs találat — cím",
+        defaultValue: "Keine Behandlung gefunden",
+    },
+    emptyText: {
+        type: ControlType.String,
+        title: "Nincs találat — szöveg",
+        displayTextArea: true,
+        defaultValue:
+            "Für Ihre Suche gibt es keinen Treffer. Prüfen Sie die Schreibweise oder suchen Sie mit einem allgemeineren Begriff — zum Beispiel «Gesicht» statt einer genauen Bezeichnung.",
+        description:
+            "Ne csak azt mondja, hogy nincs találat: mondja meg, mit tegyen a látogató. Svájci idézőjel: « ».",
+    },
+    showReset: {
+        type: ControlType.Boolean,
+        title: "Visszaállító gomb",
+        defaultValue: true,
+        enabledTitle: "Van",
+        disabledTitle: "Nincs",
+    },
+    resetLabel: {
+        type: ControlType.String,
+        title: "Visszaállító felirat",
+        defaultValue: "Suche zurücksetzen",
+        hidden: (props) => !props.showReset,
+    },
+
+    // ── ELRENDEZÉS ──
+    align: {
+        type: ControlType.Enum,
+        title: "Igazítás",
+        options: ["left", "center", "right"],
+        optionTitles: ["Balra", "Középre", "Jobbra"],
+        defaultValue: "left",
+        displaySegmentedControl: true,
+        description:
+            "Balra: ugyanabba az oszlopba, ahol a fejezetcímek és a kártyák kezdődnek. Ettől fog a listához tartozni, nem a hero-hoz.",
+    },
+    maxWidth: {
+        type: ControlType.Number,
+        title: "Tartalom szélessége",
+        defaultValue: 1140,
+        min: 600,
+        max: 1600,
+        step: 10,
+        unit: "px",
+        description:
+            "Állítsd PONTOSAN ugyanarra, mint a kezelés-kártyák konténerét (jelenleg 1140 px) — csak így lesz egy vonalban a bal széle a kártyákéval.",
+    },
+    paddingX: {
+        type: ControlType.Number,
+        title: "Belső margó — oldalt",
+        defaultValue: 40,
+        min: 0,
+        max: 120,
+        step: 2,
+        unit: "px",
+    },
+    paddingY: {
+        type: ControlType.Number,
+        title: "Belső margó — fent/lent",
+        defaultValue: 18,
+        min: 4,
+        max: 60,
+        step: 2,
+        unit: "px",
+        description:
+            "Ragadós sávnál tartsd alacsonyan: minden pixel elvesz a lista helyéből.",
+    },
+    fieldHeight: {
+        type: ControlType.Number,
+        title: "Mező magassága",
+        defaultValue: 48,
+        min: 36,
+        max: 72,
+        step: 1,
+        unit: "px",
+        description:
+            "44 px az alsó határ (ez az érinthető minimum), 48 a kényelmes. A szűrő gombot állítsd UGYANERRE.",
+    },
+    radius: {
+        type: ControlType.Number,
+        title: "Lekerekítés",
+        defaultValue: 99,
+        min: 0,
+        max: 99,
+        step: 1,
+        unit: "px",
+        description: "99 = pill. A szűrő gomb lekerekítése egyezzen vele.",
+    },
+    gap: {
+        type: ControlType.Number,
+        title: "Elemek közti rés",
+        defaultValue: 14,
+        min: 4,
+        max: 48,
+        step: 2,
+        unit: "px",
+    },
+
+    // ── STICKY ──
+    isSticky: {
+        type: ControlType.Boolean,
+        title: "Ragadós sáv",
+        defaultValue: true,
+        enabledTitle: "Igen",
+        disabledTitle: "Nem",
+        description:
+            "17 kezelésnél ez nem díszítés: aki a lista közepén jár, ne kelljen visszagörgetnie a szűréshez.",
+    },
+    stickyTop: {
+        type: ControlType.Number,
+        title: "Ragadás — desktop",
+        defaultValue: 80,
+        min: 0,
+        max: 200,
+        step: 1,
+        unit: "px",
+        description: "A sticky navbar magassága. Ennyivel áll meg lentebb.",
+        hidden: (props) => !props.isSticky,
+    },
+    stickyTopMobile: {
+        type: ControlType.Number,
+        title: "Ragadás — mobil",
+        defaultValue: 64,
+        min: 0,
+        max: 200,
+        step: 1,
+        unit: "px",
+        hidden: (props) => !props.isSticky,
+    },
+    shadowWhenStuck: {
+        type: ControlType.Boolean,
+        title: "Árnyék ragadáskor",
+        defaultValue: true,
+        enabledTitle: "Van",
+        disabledTitle: "Nincs",
+        description:
+            "Csak akkor jelenik meg, amikor a sáv tényleg beragadt — így elválik a fölötte átgörgő kártyáktól.",
+        hidden: (props) => !props.isSticky,
+    },
+
+    // ── GÖRGETÉS FÓKUSZRA ──
+    scrollOnFocus: {
+        type: ControlType.Boolean,
+        title: "Görgetés a keresőbe kattintva",
+        defaultValue: true,
+        enabledTitle: "Igen",
+        disabledTitle: "Nem",
+        description:
+            "Az első fejezetcím teteje pontosan a sáv alá kerül. A sáv magasságát a komponens méri, tehát ha átállítod a mező magasságát, a görgetés magától igazodik.",
+    },
+    scrollGap: {
+        type: ControlType.Number,
+        title: "Rés a sáv és a cím közt",
+        defaultValue: 20,
+        min: 0,
+        max: 160,
+        step: 2,
+        unit: "px",
+        description:
+            "EZT hangold: ennyi levegő marad a ragadós sáv alja és a fejezetcím teteje között. Ha a cím túl közel ül, növeld.",
+        hidden: (props) => !props.scrollOnFocus,
+    },
+
+    // ── SZÍNEK ──
+    backgroundColor: {
+        type: ControlType.Color,
+        title: "Sáv háttere",
+        defaultValue: "#F3E4DA",
+        description:
+            "Ragadós sávnál MUSZÁJ tömörnek lennie — átlátszó háttéren a kártyák átütnének rajta görgetés közben.",
+    },
+    fieldBg: {
+        type: ControlType.Color,
+        title: "Mező háttere",
+        defaultValue: "#FFFFFF",
+    },
+    borderColor: {
+        type: ControlType.Color,
+        title: "Mező kerete",
+        defaultValue: "rgba(166,128,124,0.20)",
+    },
+    textColor: {
+        type: ControlType.Color,
+        title: "Szöveg",
+        defaultValue: "#3A3028",
+    },
+    mutedColor: {
+        type: ControlType.Color,
+        title: "Placeholder",
+        defaultValue: "#7A7369",
+    },
+    accentColor: {
+        type: ControlType.Color,
+        title: "Accent",
+        defaultValue: "#A6807C",
+    },
+})
